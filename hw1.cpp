@@ -28,7 +28,6 @@ struct State {
     int f; // total cost (g + h)
     std::string path; // path taken to reach this state
 
-    // For unordered_set: boxPositions must match, and agentPos must be "reachable" from other's agentPos via agentGoTo.
     bool operator==(const State& other) const {
         return boxPositions == other.boxPositions && agentPos == other.agentPos;
     }
@@ -108,25 +107,27 @@ std::vector<std::string> drawGrid(std::vector<std::string> grid, std::set<pii> b
             newGrid[r][c] = 'x'; // Box on regular tile
         }
     }
-    std::cout << "Current Grid State:\n";
-    for (const auto& row : newGrid) {
-        std::cout << row << std::endl;
-    }
+    // std::cout << "Current Grid State:\n";
+    // for (const auto& row : newGrid) {
+    //     std::cout << row << std::endl;
+    // }
     return newGrid;
 }
 
 std::string agentGoTo(std::pair<int, int> agentPos, std::pair<int, int> targetPos, std::vector<std::string> curgrid) {
+    // std::cout << "Finding path for agent from (" << agentPos.first << ", " << agentPos.second << ") to (" << targetPos.first << ", " << targetPos.second << ")\n";
+    if (agentPos == targetPos) return "";
     int n = curgrid.size();
     int m = curgrid[0].size();
     std::vector<std::vector<bool>> visited(n, std::vector<bool>(m, false));
     std::queue<std::tuple<int, int, std::string>> q;
     q.push({agentPos.first, agentPos.second, ""});
     visited[agentPos.first][agentPos.second] = true;
-
     while (!q.empty()) {
         auto [r, c, path] = q.front(); q.pop();
-        // std::cout << "Visiting: (" << r << ", " << c << ") with path: " << path << std::endl;
+        // std::cout << "Visiting: (" << r << ", " << c << ") from (" << agentPos.first << ", " << agentPos.second << ") with path: " << path << std::endl;
         if (std::make_pair(r, c) == targetPos) {
+            // std::cout << "Path found: " << path << std::endl;
             return path;
         }
         for (int d = 0; d < 4; ++d) {
@@ -141,7 +142,7 @@ std::string agentGoTo(std::pair<int, int> agentPos, std::pair<int, int> targetPo
             }
         }
     }
-    return ""; // No path found
+    return "N"; // No path found
 }
 
 // 0: reachable, 1: simple dead state
@@ -227,12 +228,12 @@ std::vector<int> getBoxMoves(std::pair<int, int> boxPos, std::vector<std::string
         int ac = c - dir.second; // agent col to push
         char destCell = curgrid[nr][nc], agentCell = curgrid[ar][ac];
         if ((destCell == ' ' || destCell == '.') && (simpleDeadState[nr][nc] == 0)) { // Check if box can be moved to new position
-            if (correspondingMoves[ar][ac].empty()){
+            if (correspondingMoves[ar][ac] == "N"){ // Not calculated yet
                 correspondingMoves[ar][ac] = agentGoTo(agentPos, {ar, ac}, curgrid);
                 // std::cout << correspondingMoves[ar][ac] << std::endl;
             }
             if (agentCell != '#' && agentCell != 'x' && agentCell != 'X' 
-                && (!correspondingMoves[ar][ac].empty() || (ar==agentPos.first && ac==agentPos.second))) { // Check if agent can stand to push
+                && (correspondingMoves[ar][ac] != "N" || (ar==agentPos.first && ac==agentPos.second))) { // Check if agent can stand to push
                 possibleMoves.push_back(i);
             }
         }
@@ -316,11 +317,11 @@ int main(int argc, char* argv[]) {
         pq.pop(); visited.insert({agentPos, boxPositions, g, h, f});
         // draw grid
         auto curgrid = drawGrid(grid, boxPositions);
-        std::cout << "g: " << g << ", h: " << h << ", f: " << f << ", path: " << path << std::endl;
+        // std::cout << "g: " << g << ", h: " << h << ", f: " << f << ", path: " << path << std::endl;
 
         // store corresponding moves for agent to reach each position
         std::vector<std::vector<std::string>> correspondingMoves(curgrid.size(), 
-                                std::vector<std::string>(curgrid[0].size(), ""));
+                                std::vector<std::string>(curgrid[0].size(), "N"));
 
         // find non-frozen boxes
         auto movableBoxes = nonFrozenBoxes(boxPositions, curgrid, simpleDeadState);
@@ -337,21 +338,23 @@ int main(int argc, char* argv[]) {
                 newBoxPositions.erase(box);
                 newBoxPositions.insert(mkp(nr, nc));
                 auto heuristic = heuristicFunction(newBoxPositions, grid);
-                if (heuristic == 0) {
-                    std::cout << "Solution found!\n";
-                    std::cout << "Path: " << path + correspondingMoves[box.first][box.second] << 
-                        correspondingMoves[box.first][box.second] << "\n";
-                    exit(0);
-                }
                 State newState = {box, newBoxPositions, g+1, heuristic, g+heuristic+1, 
-                    path+correspondingMoves[box.first][box.second]+dirChar[move]};
+                    path+correspondingMoves[box.first - dirs[move].first][box.second - dirs[move].second]+dirChar[move]};
                 if (visited.find(newState) != visited.end()){
-                    std::cout << "Already visited this state.\n" << std::endl;
+                    // std::cout << "Already visited this state." << std::endl;
                     continue;
                 }
+                if (heuristic == 0) {
+                    std::cout << "Solution found!\n";
+                    std::cout << "Path: " << newState.path << "\n";
+                    exit(0);
+                }
+                // std::cout << "Box: (" << box.first << ", " << box.second << "), Move: " << dirChar[move] << ", Push path: " << newState.path << std::endl;
                 pq.push(newState);
             }
+            // break;
         }
+        // break;
     }
 
     return 0;
