@@ -446,20 +446,40 @@ void pushin(const State& state, std::priority_queue<State, std::vector<State>,
             // TODO: duplication check can be improved
             // reachable from previous position
             if (hasPath(pos, state.agentPos, state.boxPositions, grid)) {
+                #ifdef DEBUG
+                std::cout << "Agent can reach the new position, not pushing new state.\n";
+                #endif
                 return;
             }
         }
         // not reachable, add new agent position
-        visited.erase(found);
+        #ifdef DEBUG
+        std::cout << "Agent cannot reach the new position, adding new agent position to existing state.\n";
+        #endif
         statePos.agentPositions = found->agentPositions;
+        // std::cout << "A\n";
         statePos.agentPositions.insert(state.agentPos);
+        // std::cout << "B\n";
         visited.insert(statePos);
+        // std::cout << "C\n";
         pq.push(state);
+        // std::cout << "D\n";
+        visited.erase(found);
+        // std::cout << "E\n";
+        #ifdef DEBUG
+        std::cout << "Done\n";
+        #endif
         return;
     }
     // not found, insert new state
+    #ifdef DEBUG
+    std::cout << "Inserting new state into visited set and priority queue.\n";
+    #endif
     visited.insert(statePos);
     pq.push(state);
+    #ifdef DEBUG
+    std::cout << "Done\n";
+    #endif
 }
 
 int main(int argc, char* argv[]) {
@@ -480,7 +500,7 @@ int main(int argc, char* argv[]) {
     pushin({agentPos, boxPositions, 0, 0, 0, ""}, pq, visited, grid);
     // find simple dead state
     std::vector<std::vector<int>> simpleDeadState = simpleDeadlockList(grid);
-    int count = 100;
+    int count = 10000;
     while (!pq.empty() && count) {
         auto [agentPos, boxPositions, g, h, f, path] = pq.top();
         #ifdef DEBUG
