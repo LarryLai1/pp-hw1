@@ -1,6 +1,7 @@
 #include <bits/stdc++.h>
 #include <fstream>
 #include <assert.h>
+#include <omp.h>
 #define mkp std::make_pair
 #define pii std::pair<int, int>
 
@@ -381,68 +382,14 @@ bool isDeadState(const std::set<pii>& boxPositions, const std::vector<std::strin
     return true; // All checks passed, it's a dead state
 }
 
-std::vector<std::vector<int>> heuristicGrid(const std::vector<std::string>& grid) {
-    std::vector<std::vector<int>> hGrid(grid.size(), std::vector<int>(grid[0].size(), 100000));
-    std::vector<pii> goalPositions;
-    for (int i = 0; i < grid.size(); ++i) {
-        for (int j = 0; j < grid[i].size(); ++j) {
-            if (grid[i][j] == '.') goalPositions.emplace_back(mkp(i, j)); 
-        }
-    }
-    for (const auto &goal: goalPositions){
-        std::vector<std::vector<bool>> visited(grid.size(), std::vector<bool>(grid[0].size(), false));
-        std::queue<std::pair<pii, int>> q;
-        q.push({goal, 0});
-        hGrid[goal.first][goal.second] = 0;
-        while (!q.empty()) {
-            auto [cell, h] = q.front();
-            auto [r, c] = cell;
-            q.pop();
-            visited[r][c] = true;
-            for (const auto& dir : dirs) {
-                int nr = r + dir.first;
-                int nc = c + dir.second;
-                if (nr < 0 || nr >= grid.size() || nc < 0 || nc >= grid[0].size()) continue;
-                char cell = grid[nr][nc];
-                if (cell == '#' || cell == '@' || visited[nr][nc]) continue;
-                visited[nr][nc] = true;
-                hGrid[nr][nc] = std::min(hGrid[nr][nc], h + 1);
-                q.push({{nr, nc}, h + 1});
-            }
-        }
-    }
-    #ifdef DEBUG
-    std::cout << "Heuristic Grid:\n";
-    for (int i = 0; i < hGrid.size(); ++i) {
-        for (int j = 0; j < hGrid[i].size(); ++j) {
-            if (hGrid[i][j] == 100000)
-                std::cout << "X ";
-            else
-                std::cout << hGrid[i][j] << " ";
-        }
-        std::cout << std::endl;
-    }
-    std::cout << "-------------------------------------\n";
-    #endif
-
-    return hGrid;
-}
-
-int heuristicFunction(const std::set<pii>& boxPositions, const std::vector<std::string>& grid,
-    const std::vector<std::vector<int>>& hGrid) {
+int heuristicFunction(const std::set<pii>& boxPositions, const std::vector<std::string>& grid) {
     int h = 0;
     for (const auto& box : boxPositions) {
-        h += hGrid[box.first][box.second];
-    }
-    return h;
-}
-
-int oldHeuristicFunction(const std::set<pii>& boxPositions, const std::vector<std::string>& grid,
-    const std::vector<std::vector<int>>& hGrid) {
-    int h = 0;
-    for (const auto& box : boxPositions) {
-        auto [r, c] = box;
-        if (grid[r][c] != '.') h++;
+        int r = box.first;
+        int c = box.second;
+        if (grid[r][c] != '.') {
+            h += 1; // Box on regular tile
+        }
     }
     return h;
 }
@@ -546,7 +493,6 @@ int main(int argc, char* argv[]) {
     // read file
     std::string filename = argv[1];
     auto [grid, boxPositions, agentPos] = readFileToVector(filename);
-    auto hGrid = heuristicGrid(grid);
     std::priority_queue<State, std::vector<State>, 
         std::function<bool(const State&, const State&)>> pq(
         [](const State& a, const State& b) { return a.f > b.f; });
@@ -555,11 +501,9 @@ int main(int argc, char* argv[]) {
     pushin({agentPos, boxPositions, 0, 0, 0, ""}, pq, visited, grid);
     // find simple dead state
     std::vector<std::vector<int>> simpleDeadState = simpleDeadlockList(grid);
-    int count = 0;
     while (!pq.empty()) {
         auto [agentPos, boxPositions, g, h, f, path] = pq.top();
         #ifdef DEBUG
-        if (count > 1000) break;
         std::cout << "-------------------------------------------\n";
         std::cout << "Exploring state with g: " << g << ", h: " << h << ", f: " << f << ", path: " << path << std::endl;
         std::cout << "Agent Position: (" << agentPos.first << ", " << agentPos.second << ")\n";
@@ -596,8 +540,7 @@ int main(int argc, char* argv[]) {
                 // update box position
                 newBoxPositions.erase(box);
                 newBoxPositions.insert(mkp(nr, nc));
-                // auto heuristic = heuristicFunction(newBoxPositions, grid, hGrid);
-                auto heuristic = oldHeuristicFunction(newBoxPositions, grid, hGrid);
+                auto heuristic = heuristicFunction(newBoxPositions, grid);
                 State newState = {box, newBoxPositions, g+1, heuristic, g+heuristic+1, 
                     path+correspondingMoves[box.first - dirs[move].first][box.second - dirs[move].second]+dirChar[move]};
                 if (isIn(newState, visited, grid)) {
@@ -610,7 +553,6 @@ int main(int argc, char* argv[]) {
                     #ifdef DEBUG
                     std::cout << "Solution found!\n";
                     std::cout << "Length: " << newState.g << std::endl;
-                    std::cout << "State Count: " << count << std::endl;
                     std::cout << "Path: ";
                     #endif
                     std::cout << newState.path << std::endl;
@@ -622,10 +564,7 @@ int main(int argc, char* argv[]) {
                 pushin(newState, pq, visited, grid);
             }
         }
-        count++;
     }
-    #ifdef DEBUG
-    std::cout << pq.size() << std::endl;
-    #endif
+
     return 0;
 }
