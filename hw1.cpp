@@ -15,7 +15,7 @@ that is to say, only need to do getAllBoxMoves after popping from v
 */
 
 void alarm_handler(int signum) {
-    std::cerr << "Time limit exceeded (60 seconds)." << std::endl;
+    std::cerr << "Time limit exceeded." << std::endl;
     exit(1);
 }
 
@@ -47,16 +47,15 @@ struct State {
     std::pair<int, int> agentPos; // (row, col)
     // int agentGroup; // for comparison
     std::set<pii> boxPositions; // (row, col)
-    std::set<pii> movableBoxes; // (row, col)
     std::string path; // path taken to reach this state
 
     bool operator==(const State& other) const {
-        return boxPositions == other.boxPositions && agentPos == other.agentPos && movableBoxes == other.movableBoxes;
+        return boxPositions == other.boxPositions && agentPos == other.agentPos;
     }
 };
 
 struct StatePos{
-    std::set<std::pair<pii, std::set<pii>>> agentPositions; // (agent_pos, movable_boxes)
+    std::set<pii> agentPositions; // (agent_pos, movable_boxes)
     std::set<pii> boxPositions; // (row, col)
     // Hash function for StatePos using only boxPositions
     bool operator==(const StatePos& other) const {
@@ -76,8 +75,23 @@ namespace std {
             return seed;
         }
     };
+    
+    template <>
+    struct hash<std::set<pii>> {
+        size_t operator()(const std::set<pii>& s) const {
+            std::size_t seed = 0;
+            for (const auto& box : s) {
+                boost::hash_combine(seed, boost::hash<int>()(box.first));
+                boost::hash_combine(seed, boost::hash<int>()(box.second));
+            }
+            return seed;
+        }
+    };
 }
 
+// Cache for storing movableBoxes under different boxPositions
+std::unordered_map<std::set<pii>, std::pair<std::set<pii>, bool>> movableBoxesCache;
+int cacheHit = 0;
 
 // 讀取檔案並回傳為vector<string>
 std::tuple<std::vector<std::string>, std::set<pii>, pii> readFileToVector(const std::string& filename) {
@@ -236,9 +250,18 @@ std::vector<std::vector<int>> simpleDeadlockList(const std::vector<std::string>&
     return simpleDeadState;
 }
 
+
 // return all "currently" non-frozen boxes
 std::pair<std::set<pii>, bool> getMovableBoxes(const std::set<pii>& boxPositions, const std::vector<std::string>& curgrid, 
     const std::vector<std::vector<int>>& simpleDeadState) {
+    
+    // Check cache first
+    auto cacheIt = movableBoxesCache.find(boxPositions);
+    if (cacheIt != movableBoxesCache.end()) {
+        cacheHit++;
+        return movableBoxesCache[boxPositions];
+    }
+    
     std::set<pii> movableBoxes;
     std::vector<pii> nonFrozenBoxes, FrozenBoxes, tempBoxes;
     std::vector<std::vector<int>> frozen(curgrid.size(), std::vector<int>(curgrid[0].size(), -1));
@@ -309,7 +332,10 @@ std::pair<std::set<pii>, bool> getMovableBoxes(const std::set<pii>& boxPositions
             deadFrozen = true;
         }
     }
-    return {movableBoxes, deadFrozen};
+    // Store result in cache before returning
+    std::pair<std::set<pii>, bool> result = {movableBoxes, deadFrozen};
+    movableBoxesCache[boxPositions] = result;
+    return result;
 }
 
 // get move directions for a box
@@ -354,50 +380,7 @@ std::vector<std::pair<pii, std::vector<int>>> getAllBoxMoves(const std::set<pii>
     return allBoxMoves;
 }
 
-std::vector<std::vector<int>> heuristicGrid(const std::vector<std::string>& grid) {
-    std::vector<std::vector<int>> hGrid(grid.size(), std::vector<int>(grid[0].size(), 100000));
-    std::vector<pii> goalPositions;
-    for (int i = 0; i < grid.size(); ++i) {
-        for (int j = 0; j < grid[i].size(); ++j) {
-            if (grid[i][j] == '.') goalPositions.emplace_back(mkp(i, j)); 
-        }
-    }
-    for (const auto &goal: goalPositions){
-        std::vector<std::vector<bool>> visited(grid.size(), std::vector<bool>(grid[0].size(), false));
-        std::queue<std::pair<pii, int>> q;
-        q.push({goal, 0});
-        hGrid[goal.first][goal.second] = 0;
-        while (!q.empty()) {
-            auto [cell, h] = q.front();
-            auto [r, c] = cell;
-            q.pop();
-            visited[r][c] = true;
-            for (const auto& dir : dirs) {
-                int nr = r + dir.first;
-                int nc = c + dir.second;
-                if (nr < 0 || nr >= grid.size() || nc < 0 || nc >= grid[0].size()) continue;
-                char cell = grid[nr][nc];
-                if (cell == '#' || cell == '@' || visited[nr][nc]) continue;
-                visited[nr][nc] = true;
-                hGrid[nr][nc] = std::min(hGrid[nr][nc], h + 1);
-                q.push({{nr, nc}, h + 1});
-            }
-        }
-    }
-    return hGrid;
-}
-
-int heuristicFunction(const std::set<pii>& boxPositions, const std::vector<std::string>& grid,
-    const std::vector<std::vector<int>>& hGrid) {
-    int h = 0;
-    for (const auto& box : boxPositions) {
-        h += hGrid[box.first][box.second];
-    }
-    return h;
-}
-
-int oldHeuristicFunction(const std::set<pii>& boxPositions, const std::vector<std::string>& grid,
-    const std::vector<std::vector<int>>& hGrid) {
+int oldHeuristicFunction(const std::set<pii>& boxPositions, const std::vector<std::string>& grid) {
     int h = 0;
     for (const auto& box : boxPositions) {
         auto [r, c] = box;
@@ -409,14 +392,14 @@ int oldHeuristicFunction(const std::set<pii>& boxPositions, const std::vector<st
 bool isIn(const State& state, const std::unordered_set<StatePos> &visited,
     const std::vector<std::string>& grid){
     StatePos statePos;
-    statePos.agentPositions.insert({state.agentPos, state.movableBoxes});
+    statePos.agentPositions.insert(state.agentPos);
     statePos.boxPositions = state.boxPositions;
     auto found = visited.find(statePos);
     if (found != visited.end()) {
-        for (const auto& [pos, movableBoxes] : found->agentPositions) {
+        for (const auto& pos : found->agentPositions) {
             // TODO: duplication check can be improved
             // reachable from previous position
-            if (movableBoxes==state.movableBoxes && hasPath(pos, state.agentPos, state.boxPositions, grid)) {
+            if (hasPath(pos, state.agentPos, state.boxPositions, grid)) {
                 return true;
             }
         }
@@ -427,21 +410,21 @@ bool isIn(const State& state, const std::unordered_set<StatePos> &visited,
 void pushin(const State& state, std::vector<State> &v, std::unordered_set<StatePos> &visited,
     const std::vector<std::string>& grid) {
     StatePos statePos;
-    statePos.agentPositions.insert({state.agentPos, state.movableBoxes});
+    statePos.agentPositions.insert(state.agentPos);
     statePos.boxPositions = state.boxPositions;
     auto found = visited.find(statePos);
     if (found != visited.end()) {
-        for (const auto& [pos, movableBoxes] : found->agentPositions) {
+        for (const auto& pos : found->agentPositions) {
             // TODO: duplication check can be improved
             // reachable from previous position
-            if (movableBoxes == state.movableBoxes && hasPath(pos, state.agentPos, state.boxPositions, grid)) {
+            if (hasPath(pos, state.agentPos, state.boxPositions, grid)) {
                 return;
             }
         }
         // not reachable, add new agent position
         statePos.agentPositions = found->agentPositions;
         // std::cout << "A\n";
-        statePos.agentPositions.insert({state.agentPos, state.movableBoxes});
+        statePos.agentPositions.insert(state.agentPos);
         // std::cout << "B\n";
         visited.insert(statePos);
         // std::cout << "C\n";
@@ -466,7 +449,6 @@ int main(int argc, char* argv[]) {
     // read file
     std::string filename = argv[1];
     auto [grid, boxPositions, agentPos] = readFileToVector(filename);
-    auto hGrid = heuristicGrid(grid);
     std::vector<State> v, nv;
     std::unordered_set<StatePos> visited;
 
@@ -475,14 +457,15 @@ int main(int argc, char* argv[]) {
     std::vector<std::vector<int>> simpleDeadState = simpleDeadlockList(grid);
     auto [initialMovableBoxes, initialDeadFrozen] = getMovableBoxes(boxPositions, curgrid, simpleDeadState);
     if (!initialDeadFrozen) {
-        pushin({agentPos, boxPositions, initialMovableBoxes, ""}, v, visited, grid);
+        pushin({agentPos, boxPositions, ""}, v, visited, grid);
     }
     
     int count = 0;
     int moveRound = 0;
     while (!v.empty()) {
         for (const auto& state: v){
-            auto [agentPos, boxPositions, movableBoxes, path] = state;
+            auto [agentPos, boxPositions, path] = state;
+            auto movableBoxes = movableBoxesCache[boxPositions].first;
             // draw grid
             auto curgrid = drawGrid(grid, boxPositions);
     
@@ -508,8 +491,8 @@ int main(int argc, char* argv[]) {
                         continue;
                     }
                     
-                    auto heuristic = oldHeuristicFunction(newBoxPositions, grid, hGrid);
-                    State newState = {box, newBoxPositions, newMovableBoxes,
+                    auto heuristic = oldHeuristicFunction(newBoxPositions, grid);
+                    State newState = {box, newBoxPositions, 
                         path+correspondingMoves[box.first - dirs[move].first][box.second - dirs[move].second]+dirChar[move]};
                     if (isIn(newState, visited, grid)) {
                         continue;
@@ -517,6 +500,7 @@ int main(int argc, char* argv[]) {
                     if (heuristic == 0) {
                         std::cout << "States: " << count << std::endl;
                         std::cout << "Moves: " << moveRound << std::endl;
+                        std::cout << "Cache hit: " << cacheHit << std::endl;
                         std::cout << newState.path << std::endl;
                         exit(0);
                     }
