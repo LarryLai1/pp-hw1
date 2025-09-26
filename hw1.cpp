@@ -492,6 +492,7 @@ int main(int argc, char* argv[]) {
     // find simple dead state
     std::vector<std::vector<int>> simpleDeadState = simpleDeadlockList(grid);
     int count = 0;
+    int moveRound = 0;
     while (!v.empty()) {
         for (const auto& state: v){
             auto [agentPos, boxPositions, path] = state;
@@ -527,6 +528,7 @@ int main(int argc, char* argv[]) {
                     }
                     if (heuristic == 0) {
                         std::cout << "States: " << count << std::endl;
+                        std::cout << "Moves: " << moveRound << std::endl;
                         std::cout << newState.path << std::endl;
                         exit(0);
                     }
@@ -537,6 +539,7 @@ int main(int argc, char* argv[]) {
         }
         v = nv;
         nv.clear();
+        moveRound++;
     }
     return 0;
 }
