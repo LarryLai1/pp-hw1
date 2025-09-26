@@ -27,6 +27,7 @@ struct AlarmSetter {
 } alarmSetterInstance;
 #define mkp std::make_pair
 #define pii std::pair<int, int>
+#define deadlocklimit 10000
 
 /*
 o: The player stepping on a regular tile.
@@ -45,7 +46,6 @@ std::vector<std::pair<int, int>> dirs = {{-1, 0}, {1, 0}, {0, -1}, {0, 1}};
 std::vector<char> dirChar = {'W','S','A','D'};
 struct State {
     std::pair<int, int> agentPos; // (row, col)
-    // int agentGroup; // for comparison
     std::set<pii> boxPositions; // (row, col)
     std::string path; // path taken to reach this state
 
@@ -380,6 +380,48 @@ std::vector<std::pair<pii, std::vector<int>>> getAllBoxMoves(const std::set<pii>
     return allBoxMoves;
 }
 
+std::vector<std::vector<int>> heuristicGrid(const std::vector<std::string>& grid) {
+    std::vector<std::vector<int>> hGrid(grid.size(), std::vector<int>(grid[0].size(), 100000));
+    std::vector<pii> goalPositions;
+    for (int i = 0; i < grid.size(); ++i) {
+        for (int j = 0; j < grid[i].size(); ++j) {
+            if (grid[i][j] == '.') goalPositions.emplace_back(mkp(i, j)); 
+        }
+    }
+    for (const auto &goal: goalPositions){
+        std::vector<std::vector<bool>> visited(grid.size(), std::vector<bool>(grid[0].size(), false));
+        std::queue<std::pair<pii, int>> q;
+        q.push({goal, 0});
+        hGrid[goal.first][goal.second] = 0;
+        while (!q.empty()) {
+            auto [cell, h] = q.front();
+            auto [r, c] = cell;
+            q.pop();
+            visited[r][c] = true;
+            for (const auto& dir : dirs) {
+                int nr = r + dir.first;
+                int nc = c + dir.second;
+                if (nr < 0 || nr >= grid.size() || nc < 0 || nc >= grid[0].size()) continue;
+                char cell = grid[nr][nc];
+                if (cell == '#' || cell == '@' || visited[nr][nc]) continue;
+                visited[nr][nc] = true;
+                hGrid[nr][nc] = std::min(hGrid[nr][nc], h + 1);
+                q.push({{nr, nc}, h + 1});
+            }
+        }
+    }
+    return hGrid;
+}
+
+int heuristicFunction(const std::set<pii>& boxPositions, const std::vector<std::string>& grid,
+    const std::vector<std::vector<int>>& hGrid) {
+    int h = 0;
+    for (const auto& box : boxPositions) {
+        h += hGrid[box.first][box.second];
+    }
+    return h;
+}
+
 int oldHeuristicFunction(const std::set<pii>& boxPositions, const std::vector<std::string>& grid) {
     int h = 0;
     for (const auto& box : boxPositions) {
@@ -498,9 +540,9 @@ int main(int argc, char* argv[]) {
                         continue;
                     }
                     if (heuristic == 0) {
-                        std::cout << "States: " << count << std::endl;
-                        std::cout << "Moves: " << moveRound << std::endl;
-                        std::cout << "Cache hit: " << cacheHit << std::endl;
+                    //     std::cout << "States: " << count << std::endl;
+                    //     std::cout << "Moves: " << moveRound << std::endl;
+                    //     std::cout << "Cache hit: " << cacheHit << std::endl;
                         std::cout << newState.path << std::endl;
                         exit(0);
                     }
