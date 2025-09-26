@@ -23,9 +23,6 @@ struct State {
     std::pair<int, int> agentPos; // (row, col)
     // int agentGroup; // for comparison
     std::set<pii> boxPositions; // (row, col)
-    int g; // cost from start to current state
-    int h; // heuristic: existing '.' count
-    int f; // total cost (g + h)
     std::string path; // path taken to reach this state
 
     bool operator==(const State& other) const {
@@ -114,12 +111,6 @@ std::vector<std::string> drawGrid(const std::vector<std::string>& grid, const st
             newGrid[r][c] = 'x'; // Box on regular tile
         }
     }
-    #ifdef DEBUG
-    std::cout << "Current Grid State:\n";
-    for (const auto& row : newGrid) {
-        std::cout << row << std::endl;
-    }
-    #endif
     return newGrid;
 }
 
@@ -216,19 +207,6 @@ std::vector<std::vector<int>> simpleDeadlockList(const std::vector<std::string>&
             }
         }
     }
-    // Print simpleDeadState for debugging
-    #ifdef DEBUG
-    std::cout << "Simple Dead State Map:\n";
-    for (int i = 0; i < simpleDeadState.size(); ++i) {
-        for (int j = 0; j < simpleDeadState[i].size(); ++j) {
-            if (simpleDeadState[i][j] == 1)
-                std::cout << "1";
-            else
-            std::cout << grid[i][j];
-        }
-        std::cout << std::endl;
-    }
-    #endif
     return simpleDeadState;
 }
 
@@ -302,9 +280,6 @@ std::pair<std::vector<pii>, bool> getMovableBoxes(const std::set<pii>& boxPositi
         auto [r, c] = cell;
         if (curgrid[r][c] != 'X') {
             deadFrozen = true;
-            #ifdef DEBUG
-            std::cout << "Box at (" << r << ", " << c << ") is dead frozen.\n";
-            #endif
         }
     }
     return {movableBoxes, deadFrozen};
@@ -411,20 +386,6 @@ std::vector<std::vector<int>> heuristicGrid(const std::vector<std::string>& grid
             }
         }
     }
-    #ifdef DEBUG
-    std::cout << "Heuristic Grid:\n";
-    for (int i = 0; i < hGrid.size(); ++i) {
-        for (int j = 0; j < hGrid[i].size(); ++j) {
-            if (hGrid[i][j] == 100000)
-                std::cout << "X ";
-            else
-                std::cout << hGrid[i][j] << " ";
-        }
-        std::cout << std::endl;
-    }
-    std::cout << "-------------------------------------\n";
-    #endif
-
     return hGrid;
 }
 
@@ -454,42 +415,18 @@ bool isIn(const State& state, const std::unordered_set<StatePos> &visited,
     statePos.boxPositions = state.boxPositions;
     auto found = visited.find(statePos);
     if (found != visited.end()) {
-        #ifdef DEBUG
-        std::cout << "Found existing state, checking reachability...\n";
-        std::cout << "Box positions: ";
-        for (const auto& box : state.boxPositions) {
-            std::cout << "(" << box.first << ", " << box.second << ") ";
-        }
-        std::cout << "\n";
-        #endif
         for (const auto& pos : found->agentPositions) {
             // TODO: duplication check can be improved
             // reachable from previous position
-            #ifdef DEBUG
-            std::cout << "Checking if agent can reach from (" << pos.first << ", " << pos.second << ") to (" 
-                      << state.agentPos.first << ", " << state.agentPos.second << ")\n";
-            #endif
             if (hasPath(pos, state.agentPos, state.boxPositions, grid)) {
-                #ifdef DEBUG
-                std::cout << "Agent can reach the new position.\n";
-                #endif
                 return true;
-            }
-            else {
-                #ifdef DEBUG
-                std::cout << "Agent cannot reach the new position from (" << pos.first << ", " << pos.second << ").\n";
-                #endif
             }
         }
     }
-    #ifdef DEBUG
-    std::cout << "No existing state found or no reachable agent position.\n";
-    #endif
     return false;
 }
 
-void pushin(const State& state, std::priority_queue<State, std::vector<State>, 
-    std::function<bool(const State&, const State&)>> &pq, std::unordered_set<StatePos> &visited,
+void pushin(const State& state, std::vector<State> &v, std::unordered_set<StatePos> &visited,
     const std::vector<std::string>& grid) {
     StatePos statePos;
     statePos.agentPositions.insert(state.agentPos);
@@ -500,40 +437,25 @@ void pushin(const State& state, std::priority_queue<State, std::vector<State>,
             // TODO: duplication check can be improved
             // reachable from previous position
             if (hasPath(pos, state.agentPos, state.boxPositions, grid)) {
-                #ifdef DEBUG
-                std::cout << "Agent can reach the new position, not pushing new state.\n";
-                #endif
                 return;
             }
         }
         // not reachable, add new agent position
-        #ifdef DEBUG
-        std::cout << "Agent cannot reach the new position, adding new agent position to existing state.\n";
-        #endif
         statePos.agentPositions = found->agentPositions;
         // std::cout << "A\n";
         statePos.agentPositions.insert(state.agentPos);
         // std::cout << "B\n";
         visited.insert(statePos);
         // std::cout << "C\n";
-        pq.push(state);
+        v.push_back(state);
         // std::cout << "D\n";
         visited.erase(found);
         // std::cout << "E\n";
-        #ifdef DEBUG
-        std::cout << "Done\n";
-        #endif
         return;
     }
     // not found, insert new state
-    #ifdef DEBUG
-    std::cout << "Inserting new state into visited set and priority queue.\n";
-    #endif
     visited.insert(statePos);
-    pq.push(state);
-    #ifdef DEBUG
-    std::cout << "Done\n";
-    #endif
+    v.push_back(state);
 }
 
 int main(int argc, char* argv[]) {
@@ -547,85 +469,58 @@ int main(int argc, char* argv[]) {
     std::string filename = argv[1];
     auto [grid, boxPositions, agentPos] = readFileToVector(filename);
     auto hGrid = heuristicGrid(grid);
-    std::priority_queue<State, std::vector<State>, 
-        std::function<bool(const State&, const State&)>> pq(
-        [](const State& a, const State& b) { return a.f > b.f; });
+    std::vector<State> v, nv;
     std::unordered_set<StatePos> visited;
 
-    pushin({agentPos, boxPositions, 0, 0, 0, ""}, pq, visited, grid);
+    pushin({agentPos, boxPositions, ""}, v, visited, grid);
     // find simple dead state
     std::vector<std::vector<int>> simpleDeadState = simpleDeadlockList(grid);
     int count = 0;
-    while (!pq.empty()) {
-        auto [agentPos, boxPositions, g, h, f, path] = pq.top();
-        #ifdef DEBUG
-        if (count > 1000) break;
-        std::cout << "-------------------------------------------\n";
-        std::cout << "Exploring state with g: " << g << ", h: " << h << ", f: " << f << ", path: " << path << std::endl;
-        std::cout << "Agent Position: (" << agentPos.first << ", " << agentPos.second << ")\n";
-        #endif
-        pq.pop();
-        // draw grid
-        auto curgrid = drawGrid(grid, boxPositions);
-        // std::cout << "g: " << g << ", h: " << h << ", f: " << f << ", path: " << path << std::endl;
-
-        // store corresponding moves for agent to reach each position
-        std::vector<std::vector<std::string>> correspondingMoves(curgrid.size(), 
-                                std::vector<std::string>(curgrid[0].size(), "N"));
-
-        // find non-frozen boxes
-        auto [movableBoxes, deadFrozen] = getMovableBoxes(boxPositions, curgrid, simpleDeadState);
-        if (deadFrozen) {
-            #ifdef DEBUG
-            std::cout << "Dead frozen box detected. Skipping this state.\n";
-            #endif
-            continue;
-        }
-        auto boxMoves = getAllBoxMoves(movableBoxes, curgrid, simpleDeadState, agentPos, correspondingMoves);
-        for (int i=0; i<movableBoxes.size(); ++i){
-            auto box = movableBoxes[i];
-            auto moves = boxMoves[i];
-            for (const auto& move : moves) {
-                int nr = box.first + dirs[move].first;
-                int nc = box.second + dirs[move].second;
-                #ifdef DEBUG
-                std::cout << "** Checking Move " << dirChar[move] << " for Box at (" << box.first << ", " << box.second << ") to (" << nr << ", " << nc << ")\n";
-                #endif
-                // TODO: maybe check dead state here?
-                auto newBoxPositions = boxPositions;
-                // update box position
-                newBoxPositions.erase(box);
-                newBoxPositions.insert(mkp(nr, nc));
-                // auto heuristic = heuristicFunction(newBoxPositions, grid, hGrid);
-                auto heuristic = oldHeuristicFunction(newBoxPositions, grid, hGrid);
-                State newState = {box, newBoxPositions, g+1, heuristic, g+heuristic+1, 
-                    path+correspondingMoves[box.first - dirs[move].first][box.second - dirs[move].second]+dirChar[move]};
-                if (isIn(newState, visited, grid)) {
-                    #ifdef DEBUG
-                    std::cout << "Already existing this state." << std::endl;
-                    #endif
-                    continue;
-                }
-                if (heuristic == 0) {
-                    #ifdef DEBUG
-                    std::cout << "Solution found!\n";
-                    std::cout << "Length: " << newState.g << std::endl;
-                    std::cout << "State Count: " << count << std::endl;
-                    std::cout << "Path: ";
-                    #endif
-                    std::cout << newState.path << std::endl;
-                    exit(0);
-                }
-                #ifdef DEBUG
-                std::cout << "Box: (" << box.first << ", " << box.second << "), Move: " << dirChar[move] << ", Push path: " << newState.path << std::endl;
-                #endif
-                pushin(newState, pq, visited, grid);
+    while (!v.empty()) {
+        for (const auto& state: v){
+            auto [agentPos, boxPositions, path] = state;
+            // draw grid
+            auto curgrid = drawGrid(grid, boxPositions);
+            // std::cout << "g: " << g << ", h: " << h << ", f: " << f << ", path: " << path << std::endl;
+    
+            // store corresponding moves for agent to reach each position
+            std::vector<std::vector<std::string>> correspondingMoves(curgrid.size(), 
+                                    std::vector<std::string>(curgrid[0].size(), "N"));
+    
+            // find non-frozen boxes
+            auto [movableBoxes, deadFrozen] = getMovableBoxes(boxPositions, curgrid, simpleDeadState);
+            if (deadFrozen) {
+                continue;
             }
+            auto boxMoves = getAllBoxMoves(movableBoxes, curgrid, simpleDeadState, agentPos, correspondingMoves);
+            for (int i=0; i<movableBoxes.size(); ++i){
+                auto box = movableBoxes[i];
+                auto moves = boxMoves[i];
+                for (const auto& move : moves) {
+                    int nr = box.first + dirs[move].first;
+                    int nc = box.second + dirs[move].second;
+                    // TODO: maybe check dead state here?
+                    auto newBoxPositions = boxPositions;
+                    // update box position
+                    newBoxPositions.erase(box);
+                    newBoxPositions.insert(mkp(nr, nc));
+                    auto heuristic = oldHeuristicFunction(newBoxPositions, grid, hGrid);
+                    State newState = {box, newBoxPositions, 
+                        path+correspondingMoves[box.first - dirs[move].first][box.second - dirs[move].second]+dirChar[move]};
+                    if (isIn(newState, visited, grid)) {
+                        continue;
+                    }
+                    if (heuristic == 0) {
+                        std::cout << newState.path << std::endl;
+                        exit(0);
+                    }
+                    pushin(newState, nv, visited, grid);
+                }
+            }
+            count++;
         }
-        count++;
+        v = nv;
+        nv.clear();
     }
-    #ifdef DEBUG
-    std::cout << pq.size() << std::endl;
-    #endif
     return 0;
 }
