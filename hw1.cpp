@@ -92,6 +92,8 @@ namespace std {
 // Cache for storing movableBoxes under different boxPositions
 std::unordered_map<std::set<pii>, std::pair<std::set<pii>, bool>> movableBoxesCache;
 int cacheHit = 0;
+int count = 0;
+int moveRound = 0;
 
 // 讀取檔案並回傳為vector<string>
 std::tuple<std::vector<std::string>, std::set<pii>, pii> readFileToVector(const std::string& filename) {
@@ -481,6 +483,57 @@ void pushin(const State& state, std::vector<State> &v, std::unordered_set<StateP
     v.push_back(state);
 }
 
+void bfs(const std::vector<State>& v, std::vector<State> &nv, std::unordered_set<StatePos> &visited,
+    const std::vector<std::string>& grid, const std::vector<std::vector<int>>& simpleDeadState) {
+    for (const auto& state: v){
+        auto [agentPos, boxPositions, path] = state;
+        auto movableBoxes = movableBoxesCache[boxPositions].first;
+        // draw grid
+        auto curgrid = drawGrid(grid, boxPositions);
+
+        // store corresponding moves for agent to reach each position
+        std::vector<std::vector<std::string>> correspondingMoves(grid.size(), 
+                                std::vector<std::string>(grid[0].size(), "N"));
+
+        auto boxMoves = getAllBoxMoves(movableBoxes, curgrid, simpleDeadState, agentPos, correspondingMoves);
+        for (const auto& [box, moves] : boxMoves){
+            for (const auto& move : moves) {
+                int nr = box.first + dirs[move].first;
+                int nc = box.second + dirs[move].second;
+                // TODO: maybe check dead state here?
+                auto newBoxPositions = boxPositions;
+                // update box position
+                newBoxPositions.erase(box);
+                newBoxPositions.insert(mkp(nr, nc));
+                
+                // Draw new grid and get movable boxes before pushing
+                auto newCurgrid = drawGrid(grid, newBoxPositions);
+                auto [newMovableBoxes, deadFrozen] = getMovableBoxes(newBoxPositions, newCurgrid, simpleDeadState);
+                if (deadFrozen) {
+                    continue;
+                }
+                
+                auto heuristic = oldHeuristicFunction(newBoxPositions, grid);
+                State newState = {box, newBoxPositions, 
+                    path+correspondingMoves[box.first - dirs[move].first][box.second - dirs[move].second]+dirChar[move]};
+                if (isIn(newState, visited, grid)) {
+                    continue;
+                }
+                if (heuristic == 0) {
+                    std::cout << "States: " << count << std::endl;
+                    std::cout << "Moves: " << moveRound << std::endl;
+                    std::cout << "Cache hit: " << cacheHit << std::endl;
+                    std::cout << newState.path << std::endl;
+                    exit(0);
+                }
+                pushin(newState, nv, visited, grid);
+            }
+        }
+        count++;
+    }
+}
+
+
 int main(int argc, char* argv[]) {
     // 檢查命令列參數
     if (argc != 2) {
@@ -502,55 +555,10 @@ int main(int argc, char* argv[]) {
         pushin({agentPos, boxPositions, ""}, v, visited, grid);
     }
     
-    int count = 0;
-    int moveRound = 0;
+
     while (!v.empty()) {
-        for (const auto& state: v){
-            auto [agentPos, boxPositions, path] = state;
-            auto movableBoxes = movableBoxesCache[boxPositions].first;
-            // draw grid
-            auto curgrid = drawGrid(grid, boxPositions);
-    
-            // store corresponding moves for agent to reach each position
-            std::vector<std::vector<std::string>> correspondingMoves(curgrid.size(), 
-                                    std::vector<std::string>(curgrid[0].size(), "N"));
-    
-            auto boxMoves = getAllBoxMoves(movableBoxes, curgrid, simpleDeadState, agentPos, correspondingMoves);
-            for (const auto& [box, moves] : boxMoves){
-                for (const auto& move : moves) {
-                    int nr = box.first + dirs[move].first;
-                    int nc = box.second + dirs[move].second;
-                    // TODO: maybe check dead state here?
-                    auto newBoxPositions = boxPositions;
-                    // update box position
-                    newBoxPositions.erase(box);
-                    newBoxPositions.insert(mkp(nr, nc));
-                    
-                    // Draw new grid and get movable boxes before pushing
-                    auto newCurgrid = drawGrid(grid, newBoxPositions);
-                    auto [newMovableBoxes, deadFrozen] = getMovableBoxes(newBoxPositions, newCurgrid, simpleDeadState);
-                    if (deadFrozen) {
-                        continue;
-                    }
-                    
-                    auto heuristic = oldHeuristicFunction(newBoxPositions, grid);
-                    State newState = {box, newBoxPositions, 
-                        path+correspondingMoves[box.first - dirs[move].first][box.second - dirs[move].second]+dirChar[move]};
-                    if (isIn(newState, visited, grid)) {
-                        continue;
-                    }
-                    if (heuristic == 0) {
-                    //     std::cout << "States: " << count << std::endl;
-                    //     std::cout << "Moves: " << moveRound << std::endl;
-                    //     std::cout << "Cache hit: " << cacheHit << std::endl;
-                        std::cout << newState.path << std::endl;
-                        exit(0);
-                    }
-                    pushin(newState, nv, visited, grid);
-                }
-            }
-            count++;
-        }
+        std::cout << "Round: " << moveRound << ", States: " << v.size() << ", Total: " << count << std::endl;
+        bfs(v, nv, visited, grid, simpleDeadState);
         v = nv;
         nv.clear();
         moveRound++;

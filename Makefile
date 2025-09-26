@@ -1,9 +1,4 @@
-CXX = g++
-CXXFLAGS = -std=c++17 -O3 -pthread -fopenmp
-TARGETS = hw1
-
-.PHONY: all                                                                                                                                                                                 all: $(TARGETS)
-
-.PHONY: clean
+all:
+	g++ hw1.cpp -o hw1 -std=c++17
 clean:
-rm -f $(TARGETS)
+	rm hw1
