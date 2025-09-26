@@ -1,6 +1,21 @@
 #include <bits/stdc++.h>
 #include <fstream>
 #include <assert.h>
+#include <boost/functional/hash.hpp>
+#include <signal.h>
+#include <unistd.h>
+
+void alarm_handler(int signum) {
+    std::cerr << "Time limit exceeded (30 seconds)." << std::endl;
+    exit(1);
+}
+
+struct AlarmSetter {
+    AlarmSetter() {
+        signal(SIGALRM, alarm_handler);
+        alarm(60);
+    }
+} alarmSetterInstance;
 #define mkp std::make_pair
 #define pii std::pair<int, int>
 
@@ -43,11 +58,12 @@ namespace std {
     template <>
     struct hash<StatePos> {
         size_t operator()(const StatePos& s) const {
-            size_t res = 0;
+            std::size_t seed = 0;
             for (const auto& box : s.boxPositions) {
-                res ^= (hash<int>()(box.first) << 2) ^ (hash<int>()(box.second) << 3);
+                boost::hash_combine(seed, boost::hash<int>()(box.first));
+                boost::hash_combine(seed, boost::hash<int>()(box.second));
             }
-            return res;
+            return seed;
         }
     };
 }
@@ -481,7 +497,6 @@ int main(int argc, char* argv[]) {
             auto [agentPos, boxPositions, path] = state;
             // draw grid
             auto curgrid = drawGrid(grid, boxPositions);
-            // std::cout << "g: " << g << ", h: " << h << ", f: " << f << ", path: " << path << std::endl;
     
             // store corresponding moves for agent to reach each position
             std::vector<std::vector<std::string>> correspondingMoves(curgrid.size(), 
@@ -511,6 +526,7 @@ int main(int argc, char* argv[]) {
                         continue;
                     }
                     if (heuristic == 0) {
+                        std::cout << "States: " << count << std::endl;
                         std::cout << newState.path << std::endl;
                         exit(0);
                     }
