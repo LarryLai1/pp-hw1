@@ -5,8 +5,17 @@
 #include <signal.h>
 #include <unistd.h>
 
+/*
+To fix:
+save movable boxes in State, StatePos in std::set<pii> instead of std::vector<pii>
+also change the output type of getMovableBoxes.first to std::set<pii>
+change isIn, pushin
+do getMovableBoxes and check deadfrozen before pushing in (need to draw curgrid everytime)
+that is to say, only need to do getAllBoxMoves after popping from v
+*/
+
 void alarm_handler(int signum) {
-    std::cerr << "Time limit exceeded (30 seconds)." << std::endl;
+    std::cerr << "Time limit exceeded (60 seconds)." << std::endl;
     exit(1);
 }
 
@@ -38,15 +47,16 @@ struct State {
     std::pair<int, int> agentPos; // (row, col)
     // int agentGroup; // for comparison
     std::set<pii> boxPositions; // (row, col)
+    std::set<pii> movableBoxes; // (row, col)
     std::string path; // path taken to reach this state
 
     bool operator==(const State& other) const {
-        return boxPositions == other.boxPositions && agentPos == other.agentPos;
+        return boxPositions == other.boxPositions && agentPos == other.agentPos && movableBoxes == other.movableBoxes;
     }
 };
 
 struct StatePos{
-    std::set<pii> agentPositions; // (row, col)
+    std::set<std::pair<pii, std::set<pii>>> agentPositions; // (agent_pos, movable_boxes)
     std::set<pii> boxPositions; // (row, col)
     // Hash function for StatePos using only boxPositions
     bool operator==(const StatePos& other) const {
@@ -227,9 +237,10 @@ std::vector<std::vector<int>> simpleDeadlockList(const std::vector<std::string>&
 }
 
 // return all "currently" non-frozen boxes
-std::pair<std::vector<pii>, bool> getMovableBoxes(const std::set<pii>& boxPositions, const std::vector<std::string>& curgrid, 
+std::pair<std::set<pii>, bool> getMovableBoxes(const std::set<pii>& boxPositions, const std::vector<std::string>& curgrid, 
     const std::vector<std::vector<int>>& simpleDeadState) {
-    std::vector<pii> movableBoxes, nonFrozenBoxes, FrozenBoxes, tempBoxes;
+    std::set<pii> movableBoxes;
+    std::vector<pii> nonFrozenBoxes, FrozenBoxes, tempBoxes;
     std::vector<std::vector<int>> frozen(curgrid.size(), std::vector<int>(curgrid[0].size(), -1));
     for (const auto& box : boxPositions) {
         int r = box.first;
@@ -252,7 +263,7 @@ std::pair<std::vector<pii>, bool> getMovableBoxes(const std::set<pii>& boxPositi
         bool vBoxed = (upCell == 'x' || upCell == 'X' || downCell == 'x' || downCell == 'X');
         // std::cout << "Box at (" << r << ", " << c << ") - hBlocked: " << hBlocked << ", vBlocked: " << vBlocked << std::endl;
         if (!((hBlocked || hBoxed) && (vBlocked || vBoxed))) {
-            movableBoxes.push_back(box);
+            movableBoxes.insert(box);
             frozen[r][c] = 0;
         }
         else if (hBlocked && vBlocked){
@@ -332,44 +343,15 @@ std::vector<int> getBoxMoves(const std::pair<int, int>& boxPos, const std::vecto
 }
 
 // get all box moves
-std::vector<std::vector<int>> getAllBoxMoves(const std::vector<pii>& movableBoxes, const std::vector<std::string>& curgrid, 
+std::vector<std::pair<pii, std::vector<int>>> getAllBoxMoves(const std::set<pii>& movableBoxes, const std::vector<std::string>& curgrid, 
     const std::vector<std::vector<int>>& simpleDeadState, const std::pair<int, int>& agentPos, 
     std::vector<std::vector<std::string>>& correspondingMoves) {
-    std::vector<std::vector<int>> allBoxMoves;
+    std::vector<std::pair<pii, std::vector<int>>> allBoxMoves;
     for (const auto& box : movableBoxes) {
         auto moves = getBoxMoves(box, curgrid, simpleDeadState, agentPos, correspondingMoves);
-        allBoxMoves.push_back(moves);
+        allBoxMoves.push_back({box, moves});
     }
     return allBoxMoves;
-}
-
-bool isDeadState(const std::set<pii>& boxPositions, const std::vector<std::string>& curgrid, 
-    const std::vector<std::vector<int>>& simpleDeadState, const std::vector<pii>& movableBoxes, 
-    const std::pair<int, int>& agentPos, std::vector<std::vector<std::string>>& correspondingMoves) {
-    /*
-    1. check if any box is in a simple dead state
-    2. check if there is no movable box
-    3. check if all movable boxes have no possible moves
-    */
-    for (const auto& box : boxPositions) {
-        int r = box.first;
-        int c = box.second;
-        if (simpleDeadState[r][c] == 1) {
-            // std::cout << "Box at (" << r << ", " << c << ") is in a simple dead state.\n";
-            return true;
-        }
-    }
-    if (movableBoxes.empty()) {
-        // std::cout << "No movable boxes available.\n";
-        return true;
-    }
-    for (const auto& box : movableBoxes) {
-        auto possibleMoves = getBoxMoves(box, curgrid, simpleDeadState, agentPos, correspondingMoves);
-        if (!possibleMoves.empty()) {
-            return false; // Found a movable box with possible moves
-        }
-    }
-    return true; // All checks passed, it's a dead state
 }
 
 std::vector<std::vector<int>> heuristicGrid(const std::vector<std::string>& grid) {
@@ -427,14 +409,14 @@ int oldHeuristicFunction(const std::set<pii>& boxPositions, const std::vector<st
 bool isIn(const State& state, const std::unordered_set<StatePos> &visited,
     const std::vector<std::string>& grid){
     StatePos statePos;
-    statePos.agentPositions.insert(state.agentPos);
+    statePos.agentPositions.insert({state.agentPos, state.movableBoxes});
     statePos.boxPositions = state.boxPositions;
     auto found = visited.find(statePos);
     if (found != visited.end()) {
-        for (const auto& pos : found->agentPositions) {
+        for (const auto& [pos, movableBoxes] : found->agentPositions) {
             // TODO: duplication check can be improved
             // reachable from previous position
-            if (hasPath(pos, state.agentPos, state.boxPositions, grid)) {
+            if (movableBoxes==state.movableBoxes && hasPath(pos, state.agentPos, state.boxPositions, grid)) {
                 return true;
             }
         }
@@ -445,21 +427,21 @@ bool isIn(const State& state, const std::unordered_set<StatePos> &visited,
 void pushin(const State& state, std::vector<State> &v, std::unordered_set<StatePos> &visited,
     const std::vector<std::string>& grid) {
     StatePos statePos;
-    statePos.agentPositions.insert(state.agentPos);
+    statePos.agentPositions.insert({state.agentPos, state.movableBoxes});
     statePos.boxPositions = state.boxPositions;
     auto found = visited.find(statePos);
     if (found != visited.end()) {
-        for (const auto& pos : found->agentPositions) {
+        for (const auto& [pos, movableBoxes] : found->agentPositions) {
             // TODO: duplication check can be improved
             // reachable from previous position
-            if (hasPath(pos, state.agentPos, state.boxPositions, grid)) {
+            if (movableBoxes == state.movableBoxes && hasPath(pos, state.agentPos, state.boxPositions, grid)) {
                 return;
             }
         }
         // not reachable, add new agent position
         statePos.agentPositions = found->agentPositions;
         // std::cout << "A\n";
-        statePos.agentPositions.insert(state.agentPos);
+        statePos.agentPositions.insert({state.agentPos, state.movableBoxes});
         // std::cout << "B\n";
         visited.insert(statePos);
         // std::cout << "C\n";
@@ -488,14 +470,19 @@ int main(int argc, char* argv[]) {
     std::vector<State> v, nv;
     std::unordered_set<StatePos> visited;
 
-    pushin({agentPos, boxPositions, ""}, v, visited, grid);
-    // find simple dead state
+    // Initialize with movable boxes for initial state
+    auto curgrid = drawGrid(grid, boxPositions);
     std::vector<std::vector<int>> simpleDeadState = simpleDeadlockList(grid);
+    auto [initialMovableBoxes, initialDeadFrozen] = getMovableBoxes(boxPositions, curgrid, simpleDeadState);
+    if (!initialDeadFrozen) {
+        pushin({agentPos, boxPositions, initialMovableBoxes, ""}, v, visited, grid);
+    }
+    
     int count = 0;
     int moveRound = 0;
     while (!v.empty()) {
         for (const auto& state: v){
-            auto [agentPos, boxPositions, path] = state;
+            auto [agentPos, boxPositions, movableBoxes, path] = state;
             // draw grid
             auto curgrid = drawGrid(grid, boxPositions);
     
@@ -503,15 +490,8 @@ int main(int argc, char* argv[]) {
             std::vector<std::vector<std::string>> correspondingMoves(curgrid.size(), 
                                     std::vector<std::string>(curgrid[0].size(), "N"));
     
-            // find non-frozen boxes
-            auto [movableBoxes, deadFrozen] = getMovableBoxes(boxPositions, curgrid, simpleDeadState);
-            if (deadFrozen) {
-                continue;
-            }
             auto boxMoves = getAllBoxMoves(movableBoxes, curgrid, simpleDeadState, agentPos, correspondingMoves);
-            for (int i=0; i<movableBoxes.size(); ++i){
-                auto box = movableBoxes[i];
-                auto moves = boxMoves[i];
+            for (const auto& [box, moves] : boxMoves){
                 for (const auto& move : moves) {
                     int nr = box.first + dirs[move].first;
                     int nc = box.second + dirs[move].second;
@@ -520,8 +500,16 @@ int main(int argc, char* argv[]) {
                     // update box position
                     newBoxPositions.erase(box);
                     newBoxPositions.insert(mkp(nr, nc));
+                    
+                    // Draw new grid and get movable boxes before pushing
+                    auto newCurgrid = drawGrid(grid, newBoxPositions);
+                    auto [newMovableBoxes, deadFrozen] = getMovableBoxes(newBoxPositions, newCurgrid, simpleDeadState);
+                    if (deadFrozen) {
+                        continue;
+                    }
+                    
                     auto heuristic = oldHeuristicFunction(newBoxPositions, grid, hGrid);
-                    State newState = {box, newBoxPositions, 
+                    State newState = {box, newBoxPositions, newMovableBoxes,
                         path+correspondingMoves[box.first - dirs[move].first][box.second - dirs[move].second]+dirChar[move]};
                     if (isIn(newState, visited, grid)) {
                         continue;
