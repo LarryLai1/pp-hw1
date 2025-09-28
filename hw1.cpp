@@ -4,7 +4,7 @@
 #include <boost/functional/hash.hpp>
 #include <signal.h>
 #include <unistd.h>
-#define MAXSIZE 36
+#define MAXSIZE 100
 
 /*
 To fix:
@@ -94,6 +94,12 @@ std::bitset<MAXSIZE> bitUp(std::bitset<MAXSIZE> mp, std::bitset<MAXSIZE> mask){
     return (mp >> totalc) & ~(mask);
 }
 std::bitset<MAXSIZE> bitDown(std::bitset<MAXSIZE> mp, std::bitset<MAXSIZE> mask){
+    // std::cout << "doing bitDown" << std::endl;
+    // std::cout << "mp: \t\t\t\t" << mp << std::endl;
+    // std::cout << "mask: \t\t\t\t" << mask << std::endl;
+    // std::cout << "(mp << totalc): \t\t" << (mp << totalc) << std::endl;
+    // std::cout << "(mp << totalc) & ~(mask): \t" << ((mp << totalc) & ~(mask)) << std::endl;
+    // std::cout << "-----------------------------------------" << std::endl;
     return (mp << totalc) & ~(mask);
 }
 
@@ -118,43 +124,40 @@ std::pair<std::bitset<MAXSIZE>, pii> readFileToVector(const std::string& filenam
     for (int i = 0; i < totalr; ++i) {
         for (int j = 0; j < totalc; ++j) {
             char cell = tmp[i][j];
-            auto f = 1u << (i * totalc + j);
+            int idx = i * totalc + j;
             switch (cell){
                 case 'o':
-                agentPos = mkp(i, j);
-                continue;
+                    agentPos = mkp(i, j);
+                    continue;
                 case 'O':
                     agentPos = mkp(i, j);
-                    goalPositions |= f;
+                    goalPositions.set(idx);
                     continue;
                 case '@':
-                fragPositions |= f;
+                    fragPositions.set(idx);
                     continue;
                 case '!':
                     agentPos = mkp(i, j);
-                    fragPositions |= f;
+                    fragPositions.set(idx);
                     continue;
                 case 'x':
-                    boxPositions |= f;
+                    boxPositions.set(idx);
                     continue;
                 case 'X':
-                    boxPositions |= f;
-                    goalPositions |= f;
+                    boxPositions.set(idx);
+                    goalPositions.set(idx);
                     continue;
                 case '.':
-                    goalPositions |= f;
+                    goalPositions.set(idx);
                     continue;
                 case '#':
-                    grid |= f;
+                    grid.set(idx);
                     continue;
                 default:
                     continue;
             }
         }
     }
-    // std::cout << "Grid bitmask: " << grid << std::endl;
-    // std::cout << "Goal bitmask: " << goalPositions << std::endl;
-    // std::cout << "Fragile bitmask: " << fragPositions << std::endl;
     return mkp(boxPositions, agentPos);
 }
 
@@ -188,23 +191,23 @@ std::string agentGoTo(const pii& agentPos, const pii& targetPos, std::bitset<MAX
     return "N"; // No path found
 }
 
-bool hasPath(const pii& agentPos, const pii& targetPos, std::bitset<MAXSIZE> mask) {
-    int n = totalr;
-    int m = totalc;
-    if (agentPos == targetPos) return true;
-    std::bitset<MAXSIZE> target_mask = 1u << (targetPos.first * m + targetPos.second);
-    std::bitset<MAXSIZE> start_mask = 1u << (agentPos.first * m + agentPos.second);
-    std::bitset<MAXSIZE> last = 0;
-    while (last != start_mask) {
-        last = start_mask;
-        start_mask |= bitLeft(start_mask, mask);
-        start_mask |= bitRight(start_mask, mask);
-        start_mask |= bitUp(start_mask, mask);
-        start_mask |= bitDown(start_mask, mask);
-        if ((start_mask & target_mask).any()) return true; // Path found
-    }
-    return false; // No path found
-}
+// bool hasPath(const pii& agentPos, const pii& targetPos, std::bitset<MAXSIZE> mask) {
+//     int n = totalr;
+//     int m = totalc;
+//     if (agentPos == targetPos) return true;
+//     std::bitset<MAXSIZE> target_mask = 1u << (targetPos.first * m + targetPos.second);
+//     std::bitset<MAXSIZE> start_mask = 1u << (agentPos.first * m + agentPos.second);
+//     std::bitset<MAXSIZE> last = 0;
+//     while (last != start_mask) {
+//         last = start_mask;
+//         start_mask |= bitLeft(start_mask, mask);
+//         start_mask |= bitRight(start_mask, mask);
+//         start_mask |= bitUp(start_mask, mask);
+//         start_mask |= bitDown(start_mask, mask);
+//         if ((start_mask & target_mask).any()) return true; // Path found
+//     }
+//     return false; // No path found
+// }
 
 std::bitset<MAXSIZE> connectedComponent(const pii& startPos, std::bitset<MAXSIZE> mask) {
     int n = totalr;
@@ -230,7 +233,7 @@ void simpleDeadlockList(){
         for (int j = 0; j < totalc; ++j) {
             char cell = tmp[i][j];
             if (cell == '#') continue; // wall
-            if (cell == '.') {
+            if (cell == '.' || cell == 'O' || cell == 'X') {
                 goalQueue.push(mkp(i, j));
                 continue; // target
             }
@@ -257,7 +260,7 @@ void simpleDeadlockList(){
     for (int i = 0; i < totalr; ++i) {
         for (int j = 0; j < totalc; ++j) {
             if (simpleDeadState[i][j] == 1) {
-                simpleDeadStateMask |= (1u << (i * totalc + j));
+                simpleDeadStateMask.set(i * totalc + j);
             }
         }
     }
@@ -311,7 +314,7 @@ void printBitset(const std::bitset<MAXSIZE>& bs, const pii& agentPos) {
                 std::cout << '#'; // Wall
             }
             else {
-                std::cout << (bs[idx] ? 'x' : ' ');
+                std::cout << (bs[idx] ? '1' : '0');
             }
         }
         std::cout << std::endl;
@@ -320,10 +323,12 @@ void printBitset(const std::bitset<MAXSIZE>& bs, const pii& agentPos) {
 }
 
 void pushin(const State& state, std::vector<State> &v, std::unordered_set<StatePos> &visited) {
-    // std::cout << "Pushing in new state" << std::endl;
-    // std::cout << "Agent position: (" << state.agentPos.first << ", " << state.agentPos.second << ")" << std::endl;
-    // std::cout << "Box positions: \n";
-    // printBitset(state.boxPositions, state.agentPos);
+    #ifdef DEBUG
+        std::cout << "Pushing in new state" << std::endl;
+        std::cout << "Agent position: (" << state.agentPos.first << ", " << state.agentPos.second << ")" << std::endl;
+        std::cout << "Box positions: \n";
+        printBitset(state.boxPositions, state.agentPos);
+    #endif
     StatePos statePos;
     statePos.cc = state.cc;
     statePos.boxPositions = state.boxPositions;
@@ -385,19 +390,25 @@ void bfs(const State& initialState) {
         for (const auto& state: v){
             auto [agentPos, cc, boxPositions, path] = state;
             auto [movableBoxes, deadFrozen] = getPossibleMoves(boxPositions);
-            // std::cout << "Box positions: \t\t" << boxPositions << std::endl;
-            // std::cout << "Connected component: \t" << cc << std::endl;
-            // std::cout << "Up Possible Moves: \t" << std::get<0>(movableBoxes) << std::endl;
-            // std::cout << "Down Possible Moves: \t" << std::get<1>(movableBoxes) << std::endl;
-            // std::cout << "Left Possible Moves: \t" << std::get<2>(movableBoxes) << std::endl;
-            // std::cout << "Right Possible Moves: \t" << std::get<3>(movableBoxes) << std::endl;
+            #ifdef DEBUG
+                std::cout << "Box positions: \t\t\t" << boxPositions << std::endl;
+                std::cout << "Connected component: \t\t" << cc << std::endl;
+                std::cout << "Up Possible Moves: \t\t" << std::get<0>(movableBoxes) << std::endl;
+                std::cout << "Down Possible Moves: \t\t" << std::get<1>(movableBoxes) << std::endl;
+                std::cout << "Left Possible Moves: \t\t" << std::get<2>(movableBoxes) << std::endl;
+                std::cout << "Right Possible Moves: \t\t" << std::get<3>(movableBoxes) << std::endl;
+            #endif
             if (deadFrozen) continue;
-            // std::cout << "Current state with agent at (" << agentPos.first << ", " << agentPos.second << ")" << std::endl;
+            #ifdef DEBUG
+                std::cout << "Current state with agent at (" << agentPos.first << ", " << agentPos.second << ")" << std::endl;
+            #endif
             auto boxMoves = getRealMoves(boxPositions, state.cc, movableBoxes);
-            // std::cout << "Up Real Moves: \t\t" << boxMoves[0] << std::endl;
-            // std::cout << "Down Real Moves: \t" << boxMoves[1] << std::endl;
-            // std::cout << "Left Real Moves: \t" << boxMoves[2] << std::endl;
-            // std::cout << "Right Real Moves: \t" << boxMoves[3] << std::endl;
+            #ifdef DEBUG
+                std::cout << "Up Real Moves: \t\t" << boxMoves[0] << std::endl;
+                std::cout << "Down Real Moves: \t" << boxMoves[1] << std::endl;
+                std::cout << "Left Real Moves: \t" << boxMoves[2] << std::endl;
+                std::cout << "Right Real Moves: \t" << boxMoves[3] << std::endl;
+            #endif
             for (int k=0; k<4; ++k){
                 // std::cout << "K: " << k << std::endl;
                 std::bitset<MAXSIZE> curmove = boxMoves[k];
@@ -468,8 +479,10 @@ void bfs(const State& initialState) {
         v = nv;
         nv.clear();
         moveRound++;
-        // if (moveRound > 3) exit(0);
-    }
+        #ifdef DEBUG
+            if (moveRound >= 1) exit(0);
+        #endif
+        }
 }
 
 int main(int argc, char* argv[]) {
@@ -482,8 +495,14 @@ int main(int argc, char* argv[]) {
     // read file
     std::string filename = argv[1];
     auto [boxPositions, agentPos] = readFileToVector(filename);
+    std::cout << "totalr: " << totalr << ", totalc: " << totalc << std::endl;
+    std::cout << "==========================" << std::endl;
     auto cc = connectedComponent(agentPos, grid | boxPositions);
+    // printBitset(goalPositions, {-1, -1});
     simpleDeadlockList();
+    // printBitset(simpleDeadStateMask, {-1, -1});
+    // std::cout << simpleDeadStateMask << std::endl;
+    // exit(0);
     
     bfs({agentPos, cc, boxPositions, {}});
 
