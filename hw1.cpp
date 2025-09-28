@@ -49,7 +49,7 @@ struct State {
     pii agentPos; // (row, col)
     std::bitset<MAXSIZE> cc; // connected components of agentPos
     std::bitset<MAXSIZE> boxPositions; // bitmask of box positions
-    std::vector<std::pair<pii, char>> path; // path taken to reach this state
+    std::vector<std::pair<pii, int>> path; // path taken to reach this state
 
     bool operator==(const State& other) const {
         return boxPositions == other.boxPositions && agentPos == other.agentPos;
@@ -77,7 +77,6 @@ namespace std {
 
 // Cache for storing movableBoxes under different boxPositions
 std::vector<std::string> tmp;
-int cacheHit = 0;
 int count = 0;
 int moveRound = 0;
 int totalr, totalc;
@@ -137,14 +136,10 @@ std::pair<std::bitset<MAXSIZE>, pii> readFileToVector(const std::string& filenam
                     continue;
                 case 'x':
                     boxPositions |= f;
-                    std::cout << "Cell (" << i << ", " << j << "): " << cell << std::endl;
-                    std::cout << "Bitmask: " << f << std::endl;
                     continue;
                 case 'X':
                     boxPositions |= f;
                     goalPositions |= f;
-                    std::cout << "Cell (" << i << ", " << j << "): " << cell << std::endl;
-                    std::cout << "Bitmask: " << f << std::endl;
                     continue;
                 case '.':
                     goalPositions |= f;
@@ -157,9 +152,9 @@ std::pair<std::bitset<MAXSIZE>, pii> readFileToVector(const std::string& filenam
             }
         }
     }
-    std::cout << "Grid bitmask: " << grid << std::endl;
-    std::cout << "Goal bitmask: " << goalPositions << std::endl;
-    std::cout << "Fragile bitmask: " << fragPositions << std::endl;
+    // std::cout << "Grid bitmask: " << grid << std::endl;
+    // std::cout << "Goal bitmask: " << goalPositions << std::endl;
+    // std::cout << "Fragile bitmask: " << fragPositions << std::endl;
     return mkp(boxPositions, agentPos);
 }
 
@@ -305,11 +300,30 @@ bool isIn(const State& state, const std::unordered_set<StatePos> &visited){
     return false;
 }
 
+void printBitset(const std::bitset<MAXSIZE>& bs, const pii& agentPos) {
+    for (int i = 0; i < totalr; ++i) {
+        for (int j = 0; j < totalc; ++j) {
+            int idx = i * totalc + j;
+            if (agentPos.first == i && agentPos.second == j) {
+                std::cout << 'A'; // Agent position
+            }
+            else if (tmp[i][j] == '#') {
+                std::cout << '#'; // Wall
+            }
+            else {
+                std::cout << (bs[idx] ? 'x' : ' ');
+            }
+        }
+        std::cout << std::endl;
+    }
+    std::cout << std::endl;
+}
+
 void pushin(const State& state, std::vector<State> &v, std::unordered_set<StatePos> &visited) {
     // std::cout << "Pushing in new state" << std::endl;
     // std::cout << "Agent position: (" << state.agentPos.first << ", " << state.agentPos.second << ")" << std::endl;
-    // std::cout << "Box positions: " << state.boxPositions << std::endl;
-    
+    // std::cout << "Box positions: \n";
+    // printBitset(state.boxPositions, state.agentPos);
     StatePos statePos;
     statePos.cc = state.cc;
     statePos.boxPositions = state.boxPositions;
@@ -333,15 +347,27 @@ void pushin(const State& state, std::vector<State> &v, std::unordered_set<StateP
 std::string recoverPath(const State& initialState, const State& finalState) {
     std::string result;
     pii currentPos = initialState.agentPos;
+    auto currentBoxPos = initialState.boxPositions;
+    // std::cout << "Recovering path..." << std::endl;
+    // for (const auto& step : finalState.path) {
+        // auto [targetPos, dir] = step;
+        // std::cout << "Step to (" << targetPos.first << ", " << targetPos.second << ") with push " << dir << std::endl;
+    // }
+    // std::cout << "-------------------------" << std::endl;
     for (const auto& step : finalState.path) {
         auto [targetPos, dir] = step;
-        std::string pathToTarget = agentGoTo(currentPos, targetPos, initialState.boxPositions);
+        // std::cout << "Current agent position: (" << currentPos.first << ", " << currentPos.second << ")" << std::endl;
+        // std::cout << result << std::endl;
+        std::string pathToTarget = agentGoTo(currentPos, targetPos, currentBoxPos);
         if (pathToTarget == "N") {
             return "N"; // No valid path found
         }
         result += pathToTarget; // Move agent to the position behind the box
-        result += dir; // Push the box
-        currentPos = targetPos; // Update agent position to the box's new position
+        result += dirChar[dir]; // Push the box
+        currentPos = {targetPos.first + dirs[dir].first, targetPos.second + dirs[dir].second}; // Update agent position to the box's new position
+        // Update currentBoxPos after each push
+        currentBoxPos.reset(currentPos.first * totalc + currentPos.second);
+        currentBoxPos.set((currentPos.first + dirs[dir].first) * totalc + currentPos.second + dirs[dir].second);
     }
     return result;
 }
@@ -409,25 +435,15 @@ void bfs(const State& initialState) {
                     // Compute agent position (where agent must be to push box)
                     int agentRow = boxRow - dr;
                     int agentCol = boxCol - dc;
-                    if (agentRow < 0 || agentRow >= totalr || agentCol < 0 || agentCol >= totalc) {
-                        idx = curmove._Find_next(idx);
-                        continue;
-                    }
-                    pii newAgentPos = mkp(newRow, newCol);
+                    pii newAgentPos = mkp(boxRow, boxCol);
                     pii requiredAgentPos = mkp(agentRow, agentCol);
-
-                    // Check if agent can reach required position
-                    if (!state.cc[agentRow * totalc + agentCol]) {
-                        idx = curmove._Find_next(idx);
-                        continue;
-                    }
 
                     // Update connected component for new agent position
                     auto newCC = connectedComponent(newAgentPos, grid | newBoxPositions);
 
                     // Update path
-                    std::vector<std::pair<pii, char>> newPath = state.path;
-                    newPath.push_back({requiredAgentPos, dirChar[k]});
+                    std::vector<std::pair<pii, int>> newPath = state.path;
+                    newPath.push_back({requiredAgentPos, k});
 
                     State newState = {newAgentPos, newCC, newBoxPositions, newPath};
                     if (isIn(newState, visited)) {
@@ -438,7 +454,6 @@ void bfs(const State& initialState) {
                     if ((newBoxPositions & ~goalPositions).none()) {
                         std::cout << "States: " << count << std::endl;
                         std::cout << "Moves: " << moveRound << std::endl;
-                        std::cout << "Cache hit: " << cacheHit << std::endl;
                         std::cout << recoverPath(initialState, newState);
                         std::cout << std::endl;
                         exit(0);
@@ -453,6 +468,7 @@ void bfs(const State& initialState) {
         v = nv;
         nv.clear();
         moveRound++;
+        // if (moveRound > 3) exit(0);
     }
 }
 
