@@ -4,7 +4,7 @@
 #include <boost/functional/hash.hpp>
 #include <signal.h>
 #include <unistd.h>
-#define MAXSIZE 100
+#define MAXSIZE 256
 
 /*
 To fix:
@@ -23,7 +23,7 @@ void alarm_handler(int signum) {
 struct AlarmSetter {
     AlarmSetter() {
         signal(SIGALRM, alarm_handler);
-        alarm(60);
+        alarm(180);
     }
 } alarmSetterInstance;
 #define mkp std::make_pair
@@ -179,7 +179,8 @@ std::string agentGoTo(const pii& agentPos, const pii& targetPos, std::bitset<MAX
             int nr = r + dirs[d].first;
             int nc = c + dirs[d].second;
             if (nr < 0 || nr >= n || nc < 0 || nc >= m) continue;
-            std::bitset<MAXSIZE> mask = 1u << (nr * m + nc);
+            std::bitset<MAXSIZE> mask = 0;
+            mask.set(nr * m + nc);
             // Check if wall or box
             if (((grid & mask) | (boxPositions & mask)).any()) continue;
             if (!visited[nr][nc]) {
@@ -212,7 +213,8 @@ std::string agentGoTo(const pii& agentPos, const pii& targetPos, std::bitset<MAX
 std::bitset<MAXSIZE> connectedComponent(const pii& startPos, std::bitset<MAXSIZE> mask) {
     int n = totalr;
     int m = totalc;
-    std::bitset<MAXSIZE> start_mask = 1u << (startPos.first * m + startPos.second);
+    std::bitset<MAXSIZE> start_mask = 0;
+    start_mask.set(startPos.first * m + startPos.second);
     std::bitset<MAXSIZE> last = 0;
     while (last != start_mask) {
         last = start_mask;
@@ -353,18 +355,21 @@ std::string recoverPath(const State& initialState, const State& finalState) {
     std::string result;
     pii currentPos = initialState.agentPos;
     auto currentBoxPos = initialState.boxPositions;
+    // std::cout << "==========================" << std::endl;
     // std::cout << "Recovering path..." << std::endl;
     // for (const auto& step : finalState.path) {
-        // auto [targetPos, dir] = step;
-        // std::cout << "Step to (" << targetPos.first << ", " << targetPos.second << ") with push " << dir << std::endl;
+    //     auto [targetPos, dir] = step;
+    //     std::cout << "Step to (" << targetPos.first << ", " << targetPos.second << ") with push " << dirChar[dir] << std::endl;
     // }
     // std::cout << "-------------------------" << std::endl;
     for (const auto& step : finalState.path) {
         auto [targetPos, dir] = step;
-        // std::cout << "Current agent position: (" << currentPos.first << ", " << currentPos.second << ")" << std::endl;
         // std::cout << result << std::endl;
+        // std::cout << "Current agent position: (" << currentPos.first << ", " << currentPos.second << "), Target position: (" << targetPos.first << ", " << targetPos.second << ")" << std::endl;
+        // printBitset(currentBoxPos, currentPos);
         std::string pathToTarget = agentGoTo(currentPos, targetPos, currentBoxPos);
         if (pathToTarget == "N") {
+            std::cout << "Something went wrong, no path found!" << std::endl;
             return "N"; // No valid path found
         }
         result += pathToTarget; // Move agent to the position behind the box
@@ -385,30 +390,13 @@ void bfs(const State& initialState) {
     pushin(initialState, v, visited);
     
     while (!v.empty()) {
-        std::cout << "==========================" << std::endl;
+        // std::cout << "==========================" << std::endl;
         std::cout << "Round: " << moveRound << ", States: " << v.size() << ", Total: " << count << std::endl;
         for (const auto& state: v){
             auto [agentPos, cc, boxPositions, path] = state;
             auto [movableBoxes, deadFrozen] = getPossibleMoves(boxPositions);
-            #ifdef DEBUG
-                std::cout << "Box positions: \t\t\t" << boxPositions << std::endl;
-                std::cout << "Connected component: \t\t" << cc << std::endl;
-                std::cout << "Up Possible Moves: \t\t" << std::get<0>(movableBoxes) << std::endl;
-                std::cout << "Down Possible Moves: \t\t" << std::get<1>(movableBoxes) << std::endl;
-                std::cout << "Left Possible Moves: \t\t" << std::get<2>(movableBoxes) << std::endl;
-                std::cout << "Right Possible Moves: \t\t" << std::get<3>(movableBoxes) << std::endl;
-            #endif
             if (deadFrozen) continue;
-            #ifdef DEBUG
-                std::cout << "Current state with agent at (" << agentPos.first << ", " << agentPos.second << ")" << std::endl;
-            #endif
             auto boxMoves = getRealMoves(boxPositions, state.cc, movableBoxes);
-            #ifdef DEBUG
-                std::cout << "Up Real Moves: \t\t" << boxMoves[0] << std::endl;
-                std::cout << "Down Real Moves: \t" << boxMoves[1] << std::endl;
-                std::cout << "Left Real Moves: \t" << boxMoves[2] << std::endl;
-                std::cout << "Right Real Moves: \t" << boxMoves[3] << std::endl;
-            #endif
             for (int k=0; k<4; ++k){
                 // std::cout << "K: " << k << std::endl;
                 std::bitset<MAXSIZE> curmove = boxMoves[k];
@@ -463,8 +451,8 @@ void bfs(const State& initialState) {
                     }
                     // Check for solution
                     if ((newBoxPositions & ~goalPositions).none()) {
-                        std::cout << "States: " << count << std::endl;
-                        std::cout << "Moves: " << moveRound << std::endl;
+                        // std::cout << "States: " << count << std::endl;
+                        // std::cout << "Moves: " << moveRound << std::endl;
                         std::cout << recoverPath(initialState, newState);
                         std::cout << std::endl;
                         exit(0);
@@ -495,8 +483,8 @@ int main(int argc, char* argv[]) {
     // read file
     std::string filename = argv[1];
     auto [boxPositions, agentPos] = readFileToVector(filename);
-    std::cout << "totalr: " << totalr << ", totalc: " << totalc << std::endl;
-    std::cout << "==========================" << std::endl;
+    // std::cout << "totalr: " << totalr << ", totalc: " << totalc << std::endl;
+    // std::cout << "==========================" << std::endl;
     auto cc = connectedComponent(agentPos, grid | boxPositions);
     // printBitset(goalPositions, {-1, -1});
     simpleDeadlockList();
