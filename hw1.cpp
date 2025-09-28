@@ -355,18 +355,8 @@ std::string recoverPath(const State& initialState, const State& finalState) {
     std::string result;
     pii currentPos = initialState.agentPos;
     auto currentBoxPos = initialState.boxPositions;
-    // std::cout << "==========================" << std::endl;
-    // std::cout << "Recovering path..." << std::endl;
-    // for (const auto& step : finalState.path) {
-    //     auto [targetPos, dir] = step;
-    //     std::cout << "Step to (" << targetPos.first << ", " << targetPos.second << ") with push " << dirChar[dir] << std::endl;
-    // }
-    // std::cout << "-------------------------" << std::endl;
     for (const auto& step : finalState.path) {
         auto [targetPos, dir] = step;
-        // std::cout << result << std::endl;
-        // std::cout << "Current agent position: (" << currentPos.first << ", " << currentPos.second << "), Target position: (" << targetPos.first << ", " << targetPos.second << ")" << std::endl;
-        // printBitset(currentBoxPos, currentPos);
         std::string pathToTarget = agentGoTo(currentPos, targetPos, currentBoxPos);
         if (pathToTarget == "N") {
             std::cout << "Something went wrong, no path found!" << std::endl;
@@ -390,7 +380,6 @@ void bfs(const State& initialState) {
     pushin(initialState, v, visited);
     
     while (!v.empty()) {
-        // std::cout << "==========================" << std::endl;
         std::cout << "Round: " << moveRound << ", States: " << v.size() << ", Total: " << count << std::endl;
         for (const auto& state: v){
             auto [agentPos, cc, boxPositions, path] = state;
