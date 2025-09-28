@@ -271,10 +271,14 @@ void simpleDeadlockList(){
 // return up, down, left, right possible moves
 std::pair<std::tuple<std::bitset<MAXSIZE>, std::bitset<MAXSIZE>, std::bitset<MAXSIZE>, std::bitset<MAXSIZE>>, 
     bool> getPossibleMoves(const std::bitset<MAXSIZE>& boxPositions) {
-    auto leftMoves = bitRight(bitLeft(boxPositions, grid | fragPositions | boxPositions | simpleDeadStateMask), 0);
-    auto rightMoves = bitLeft(bitRight(boxPositions, grid | fragPositions | boxPositions | simpleDeadStateMask), 0);
-    auto upMoves = bitDown(bitUp(boxPositions, grid | fragPositions | boxPositions | simpleDeadStateMask), 0);
-    auto downMoves = bitUp(bitDown(boxPositions, grid | fragPositions | boxPositions | simpleDeadStateMask), 0);
+    auto leftMoves = bitRight(bitLeft(boxPositions, grid | fragPositions | boxPositions | simpleDeadStateMask), 0) &
+            ~(bitLeft(bitRight(boxPositions, ~(grid | boxPositions)), 0));
+    auto rightMoves = bitLeft(bitRight(boxPositions, grid | fragPositions | boxPositions | simpleDeadStateMask), 0) &
+            ~(bitRight(bitLeft(boxPositions, ~(grid | boxPositions)), 0));
+    auto upMoves = bitDown(bitUp(boxPositions, grid | fragPositions | boxPositions | simpleDeadStateMask), 0) &
+            ~(bitUp(bitDown(boxPositions, ~(grid | boxPositions)), 0));
+    auto downMoves = bitUp(bitDown(boxPositions, grid | fragPositions | boxPositions | simpleDeadStateMask), 0) &
+            ~(bitDown(bitUp(boxPositions, ~(grid | boxPositions)), 0));
     bool isDeadlocked = ((leftMoves | rightMoves | upMoves | downMoves) == 0) && (boxPositions & ~goalPositions).any();
     return {std::make_tuple(upMoves, downMoves, leftMoves, rightMoves), isDeadlocked};
 }
@@ -446,6 +450,14 @@ void bfs(const State& initialState) {
                         std::cout << std::endl;
                         exit(0);
                     }
+                    // if (moveRound == 2){
+                    //     std::cout << std::get<0>(newMovableBoxes) << std::endl;
+                    //     std::cout << std::get<1>(newMovableBoxes) << std::endl;
+                    //     std::cout << std::get<2>(newMovableBoxes) << std::endl;
+                    //     std::cout << std::get<3>(newMovableBoxes) << std::endl;
+                    //     std::cout << deadFrozen << std::endl;
+                    //     printBitset(newBoxPositions, newAgentPos);
+                    // }
                     pushin(newState, nv, visited);
 
                     idx = curmove._Find_next(idx);
