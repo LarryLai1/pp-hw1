@@ -1,6 +1,5 @@
 #include <bits/stdc++.h>
 #include <fstream>
-#include <assert.h>
 #include <boost/functional/hash.hpp>
 #include <signal.h>
 #include <unistd.h>
@@ -19,7 +18,6 @@ struct AlarmSetter {
 } alarmSetterInstance;
 #define mkp std::make_pair
 #define pii std::pair<int, int>
-#define deadlocklimit 10000
 
 /*
 o: The player stepping on a regular tile.
@@ -130,7 +128,6 @@ struct StateComparator {
     }
 };
 
-// TODO: it may not be correct
 std::bitset<MAXSIZE> bitLeft(std::bitset<MAXSIZE> mp, std::bitset<MAXSIZE> mask){
     return (mp >> 1) & ~(mask);
 }
@@ -144,14 +141,11 @@ std::bitset<MAXSIZE> bitDown(std::bitset<MAXSIZE> mp, std::bitset<MAXSIZE> mask)
     return (mp << totalc) & ~(mask);
 }
 
-
 // boxPositions, agentPos
 std::pair<std::bitset<MAXSIZE>, pii> readFileToVector(const std::string& filename) {
     std::ifstream file(filename);
     std::bitset<MAXSIZE> boxPositions = 0;
     pii agentPos;
-
-    assert (file.is_open());
     
     std::string line;
     // 逐行讀取檔案內容
@@ -449,16 +443,17 @@ void astar(const State& initialState) {
                 int agentCol = boxCol - dc;
                 pii newAgentPos = mkp(boxRow, boxCol);
                 pii requiredAgentPos = mkp(agentRow, agentCol);
-
-                // Update path
-                std::vector<std::pair<pii, int>> newPath = state.path;
-                newPath.push_back({requiredAgentPos, k});
                 
                 // check if in available connected component
                 if (isIn({newAgentPos, 0, newBoxPositions, {}}, visited)) {
                     idx = curmove._Find_next(idx);
                     continue;
                 }
+
+                // Update path
+                std::vector<std::pair<pii, int>> newPath = state.path;
+                newPath.push_back({requiredAgentPos, k});
+                
                 
                 // Update connected component for new agent position
                 auto newCC = connectedComponent(newAgentPos, grid | newBoxPositions);
