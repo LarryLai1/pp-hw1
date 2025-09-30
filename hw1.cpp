@@ -454,11 +454,6 @@ string recoverPath(State* initialState, State* midState, State* midState_rev) {
         currentBoxPos.reset(nextPos.first * totalc + nextPos.second);
         currentBoxPos.set((nextPos.first + dirs[dir].first) * totalc + nextPos.second + dirs[dir].second);
     }
-    // cout << result << endl;
-    // cout << "CurPos: (" << currentPos.first << ", " << currentPos.second << ")\n";
-    // cout << "CurPos_rev: (" << midState_rev->agentPos.first << ", " << midState_rev->agentPos.second << ")\n";
-    // cout << result << endl;
-    // result += agentGoTo(currentPos, midState_rev->agentPos, currentBoxPos);
     curstate = midState_rev;
     while (curstate != nullptr && curstate->path.first != nullptr) {
         result += agentGoTo(currentPos, curstate->agentPos, curstate->boxPositions);
@@ -641,7 +636,10 @@ int main(int argc, char* argv[]) {
     push_in(endState, v_rev, visited_rev);
 
     while (!v.empty()){
-        cout << "Forward frontier size: " << v.size() << ", visited states: " << visited.size() << ", total expanded: " << countRound << endl;
+        #ifdef DEBUG
+        cout << "Forward frontier size: " << v.size() << ", Reverse frontier size: " << v_rev.size()
+             << ", Forward count: "<< countRound << ", Reverse count: " << countRound_rev << endl;
+        #endif
         bfs(initialState, endState, v, nv, visited, visited_rev);
         v = nv;
         nv.clear();
@@ -649,6 +647,7 @@ int main(int argc, char* argv[]) {
         // v_rev = nv_rev;
         // nv_rev.clear();
     }
+    cout << "No solution found." << endl;
 
     return 0;
 }
