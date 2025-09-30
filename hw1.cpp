@@ -4,9 +4,10 @@
 #include <signal.h>
 #include <unistd.h>
 #define MAXSIZE 256
+using namespace std;
 
 void alarm_handler(int signum) {
-    std::cerr << "Time limit exceeded." << std::endl;
+    cerr << "Time limit exceeded." << endl;
     exit(1);
 }
 
@@ -16,8 +17,8 @@ struct AlarmSetter {
         alarm(180);
     }
 } alarmSetterInstance;
-#define mkp std::make_pair
-#define pii std::pair<int, int>
+#define mkp make_pair
+#define pii pair<int, int>
 
 /*
 o: The player stepping on a regular tile.
@@ -32,26 +33,26 @@ X: A box on a target tile.
 */
 
 // Directions: up, down, left, right
-std::vector<std::pair<int, int>> dirs = {{-1, 0}, {1, 0}, {0, -1}, {0, 1}};
-std::vector<char> dirChar = {'W','S','A','D'};
+vector<pair<int, int>> dirs = {{-1, 0}, {1, 0}, {0, -1}, {0, 1}};
+vector<char> dirChar = {'W','S','A','D'};
 
-std::vector<std::string> tmp;
-int count = 0;
+vector<string> tmp;
+int countRound = 0, countRound_rev = 0;
 int moveRound = 0;
 int totalr, totalc;
-std::bitset<MAXSIZE> grid = 0, goalPositions = 0, fragPositions = 0;
-std::bitset<MAXSIZE> simpleDeadStateMask = 0;
-std::unordered_map<std::bitset<MAXSIZE>, bool> isFrozenCache;
+bitset<MAXSIZE> grid = 0, goalPositions = 0, fragPositions = 0;
+bitset<MAXSIZE> simpleDeadStateMask = 0;
+unordered_map<bitset<MAXSIZE>, bool> isFrozenCache;
 
 // Precalculated minimum Manhattan distances to nearest goal
-std::vector<std::vector<int>> minDistToGoal;
+vector<vector<int>> minDistToGoal;
 
 void precalculateMinDistances() {
-    minDistToGoal.assign(totalr, std::vector<int>(totalc, INT_MAX));
+    minDistToGoal.assign(totalr, vector<int>(totalc, INT_MAX));
     
     // Use BFS from all goal positions
-    std::queue<std::pair<int, int>> q;
-    std::vector<std::vector<bool>> visited(totalr, std::vector<bool>(totalc, false));
+    queue<pair<int, int>> q;
+    vector<vector<bool>> visited(totalr, vector<bool>(totalc, false));
     
     // Start from all goal positions
     for (int i = 0; i < totalr; ++i) {
@@ -85,7 +86,7 @@ void precalculateMinDistances() {
     }
 }
 
-int calculateHeuristic(const std::bitset<MAXSIZE>& boxPositions) {
+int calculateHeuristic(const bitset<MAXSIZE>& boxPositions) {
     int totalDist = 0;
     size_t idx = boxPositions._Find_first();
     while (idx < boxPositions.size()) {
@@ -99,57 +100,51 @@ int calculateHeuristic(const std::bitset<MAXSIZE>& boxPositions) {
 
 struct State {
     pii agentPos; // (row, col)
-    std::bitset<MAXSIZE> cc; // connected components of agentPos
-    std::bitset<MAXSIZE> boxPositions; // bitmask of box positions
-    std::pair<State*, int> path; // (previous state, direction taken to reach this state)
-    int gCost; // actual cost from start
-    int hCost; // heuristic cost
-    int fCost; // total cost (g + h)
+    bitset<MAXSIZE> cc; // connected components of agentPos
+    bitset<MAXSIZE> boxPositions; // bitmask of box positions
+    pair<State*, int> path; // (previous state, direction taken to reach this state)
 
-    State() : gCost(0), hCost(0), fCost(0), path({nullptr, 0}) {}
+    State() : path({nullptr, 0}) {}
     
-    State(pii agent, std::bitset<MAXSIZE> connComp, std::bitset<MAXSIZE> boxes, 
-          std::pair<State*, int> last, int g = 0) 
-        : agentPos(agent), cc(connComp), boxPositions(boxes), path(last), gCost(g) {
-        hCost = calculateHeuristic(boxPositions);
-        fCost = gCost + hCost;
-    }
+    State(pii agent, bitset<MAXSIZE> connComp, bitset<MAXSIZE> boxes, 
+          pair<State*, int> last) 
+        : agentPos(agent), cc(connComp), boxPositions(boxes), path(last) {}
 
     bool operator==(const State& other) const {
         return boxPositions == other.boxPositions && agentPos == other.agentPos;
     }
 };
 
-// Comparator for priority queue (min-heap based on fCost)
-struct StateComparator {
-    bool operator()(State* a, State* b) const {
-        if (a->fCost != b->fCost) return a->fCost > b->fCost;
-        return a->hCost > b->hCost; // tie-breaker: prefer lower heuristic
-    }
-};
+// // Comparator for priority queue (min-heap based on fCost)
+// struct StateComparator {
+//     bool operator()(State* a, State* b) const {
+//         if (a->fCost != b->fCost) return a->fCost > b->fCost;
+//         return a->hCost > b->hCost; // tie-breaker: prefer lower heuristic
+//     }
+// };
 
-std::bitset<MAXSIZE> bitLeft(std::bitset<MAXSIZE> mp, std::bitset<MAXSIZE> mask){
+bitset<MAXSIZE> bitLeft(bitset<MAXSIZE> mp, bitset<MAXSIZE> mask){
     return (mp >> 1) & ~(mask);
 }
-std::bitset<MAXSIZE> bitRight(std::bitset<MAXSIZE> mp, std::bitset<MAXSIZE> mask){
+bitset<MAXSIZE> bitRight(bitset<MAXSIZE> mp, bitset<MAXSIZE> mask){
     return (mp << 1) & ~(mask);
 }
-std::bitset<MAXSIZE> bitUp(std::bitset<MAXSIZE> mp, std::bitset<MAXSIZE> mask){
+bitset<MAXSIZE> bitUp(bitset<MAXSIZE> mp, bitset<MAXSIZE> mask){
     return (mp >> totalc) & ~(mask);
 }
-std::bitset<MAXSIZE> bitDown(std::bitset<MAXSIZE> mp, std::bitset<MAXSIZE> mask){
+bitset<MAXSIZE> bitDown(bitset<MAXSIZE> mp, bitset<MAXSIZE> mask){
     return (mp << totalc) & ~(mask);
 }
 
 // boxPositions, agentPos
-std::pair<std::bitset<MAXSIZE>, pii> readFileToVector(const std::string& filename) {
-    std::ifstream file(filename);
-    std::bitset<MAXSIZE> boxPositions = 0;
+pair<bitset<MAXSIZE>, pii> readFileToVector(const string& filename) {
+    ifstream file(filename);
+    bitset<MAXSIZE> boxPositions = 0;
     pii agentPos;
     
-    std::string line;
+    string line;
     // 逐行讀取檔案內容
-    while (std::getline(file, line)) {
+    while (getline(file, line)) {
         tmp.push_back(line);
     }
     file.close();
@@ -196,13 +191,13 @@ std::pair<std::bitset<MAXSIZE>, pii> readFileToVector(const std::string& filenam
     return mkp(boxPositions, agentPos);
 }
 
-std::string agentGoTo(const pii& agentPos, const pii& targetPos, std::bitset<MAXSIZE> boxPositions) {
+string agentGoTo(const pii& agentPos, const pii& targetPos, bitset<MAXSIZE> boxPositions) {
     if (agentPos == targetPos) return "";
     int n = totalr;
     int m = totalc;
     int tr = targetPos.first, tc = targetPos.second;
-    std::vector<std::vector<bool>> visited(n, std::vector<bool>(m, false));
-    std::queue<std::tuple<int, int, std::string>> q;
+    vector<vector<bool>> visited(n, vector<bool>(m, false));
+    queue<tuple<int, int, string>> q;
     q.push({agentPos.first, agentPos.second, ""});
     visited[agentPos.first][agentPos.second] = true;
     while (!q.empty()) {
@@ -214,7 +209,7 @@ std::string agentGoTo(const pii& agentPos, const pii& targetPos, std::bitset<MAX
             int nr = r + dirs[d].first;
             int nc = c + dirs[d].second;
             if (nr < 0 || nr >= n || nc < 0 || nc >= m) continue;
-            std::bitset<MAXSIZE> mask = 0;
+            bitset<MAXSIZE> mask = 0;
             mask.set(nr * m + nc);
             // Check if wall or box
             if (((grid & mask) | (boxPositions & mask)).any()) continue;
@@ -227,12 +222,12 @@ std::string agentGoTo(const pii& agentPos, const pii& targetPos, std::bitset<MAX
     return "N"; // No path found
 }
 
-std::bitset<MAXSIZE> connectedComponent(const pii& startPos, std::bitset<MAXSIZE> mask) {
+bitset<MAXSIZE> connectedComponent(const pii& startPos, bitset<MAXSIZE> mask) {
     int n = totalr;
     int m = totalc;
-    std::bitset<MAXSIZE> start_mask = 0;
+    bitset<MAXSIZE> start_mask = 0;
     start_mask.set(startPos.first * m + startPos.second);
-    std::bitset<MAXSIZE> last = 0;
+    bitset<MAXSIZE> last = 0;
     while (last != start_mask) {
         last = start_mask;
         start_mask |= bitLeft(start_mask, mask);
@@ -245,9 +240,9 @@ std::bitset<MAXSIZE> connectedComponent(const pii& startPos, std::bitset<MAXSIZE
 
 // 0: reachable, 1: simple dead state
 void simpleDeadlockList(){
-    std::queue<std::pair<int, int>> goalQueue;
+    queue<pair<int, int>> goalQueue;
 
-    std::vector<std::vector<int>> simpleDeadState(tmp.size(), std::vector<int>(tmp[0].size(), 0));
+    vector<vector<int>> simpleDeadState(tmp.size(), vector<int>(tmp[0].size(), 0));
     for (int i = 0; i < totalr; ++i) {
         for (int j = 0; j < totalc; ++j) {
             char cell = tmp[i][j];
@@ -262,7 +257,7 @@ void simpleDeadlockList(){
     }
 
     while (goalQueue.size() > 0) {
-        std::pair<int, int> goal = goalQueue.front(); goalQueue.pop();
+        pair<int, int> goal = goalQueue.front(); goalQueue.pop();
         int r = goal.first;
         int c = goal.second;
         // Check all four directions
@@ -286,8 +281,8 @@ void simpleDeadlockList(){
 }
 
 // return up, down, left, right possible moves
-std::tuple<std::bitset<MAXSIZE>, std::bitset<MAXSIZE>, std::bitset<MAXSIZE>
-    , std::bitset<MAXSIZE>> getPossibleMoves(const std::bitset<MAXSIZE>& boxPositions) {
+tuple<bitset<MAXSIZE>, bitset<MAXSIZE>, bitset<MAXSIZE>
+    , bitset<MAXSIZE>> getPossibleMoves(const bitset<MAXSIZE>& boxPositions) {
     auto leftMoves = bitRight(bitLeft(boxPositions, grid | fragPositions | boxPositions | simpleDeadStateMask), 0) &
             ~(bitLeft(bitRight(boxPositions, ~(grid | boxPositions)), 0));
     auto rightMoves = bitLeft(bitRight(boxPositions, grid | fragPositions | boxPositions | simpleDeadStateMask), 0) &
@@ -299,12 +294,12 @@ std::tuple<std::bitset<MAXSIZE>, std::bitset<MAXSIZE>, std::bitset<MAXSIZE>
     return {upMoves, downMoves, leftMoves, rightMoves};
 }
 
-bool isDeadFrozen(const std::bitset<MAXSIZE>& boxPositions){
+bool isDeadFrozen(const bitset<MAXSIZE>& boxPositions){
     if (isFrozenCache.find(boxPositions) != isFrozenCache.end()) {
         return isFrozenCache[boxPositions];
     }
-    std::bitset<MAXSIZE> leftMoves = 0, rightMoves = 0, upMoves = 0, downMoves = 0;
-    std::bitset<MAXSIZE> anyMove = 0, tmpbox = boxPositions;
+    bitset<MAXSIZE> leftMoves = 0, rightMoves = 0, upMoves = 0, downMoves = 0;
+    bitset<MAXSIZE> anyMove = 0, tmpbox = boxPositions;
     while (true){
         leftMoves = bitRight(bitLeft(tmpbox, grid | fragPositions | tmpbox | simpleDeadStateMask), 0) &
                 ~(bitLeft(bitRight(tmpbox, ~(grid | tmpbox)), 0));
@@ -325,76 +320,131 @@ bool isDeadFrozen(const std::bitset<MAXSIZE>& boxPositions){
 }
 
 // locate movable boxes of all directions considering connected component of agent
-// TODO: this may be wrong
 // 0: up, 1: down, 2: left, 3: right
-std::vector<std::bitset<MAXSIZE>> getRealMoves(const std::bitset<MAXSIZE>& boxPos, 
-    const std::bitset<MAXSIZE>& cc, std::tuple<std::bitset<MAXSIZE>, std::bitset<MAXSIZE>, std::bitset<MAXSIZE>, std::bitset<MAXSIZE>> moves) {
+vector<bitset<MAXSIZE>> getRealMoves(const bitset<MAXSIZE>& boxPos, 
+    const bitset<MAXSIZE>& cc, tuple<bitset<MAXSIZE>, bitset<MAXSIZE>, bitset<MAXSIZE>, bitset<MAXSIZE>> moves) {
     auto [upMoves, downMoves, leftMoves, rightMoves] = moves;
-    std::bitset<MAXSIZE> left = bitLeft(bitRight(leftMoves, ~cc), 0);
-    std::bitset<MAXSIZE> right = bitRight(bitLeft(rightMoves, ~cc), 0);
-    std::bitset<MAXSIZE> up = bitUp(bitDown(upMoves, ~cc), 0);
-    std::bitset<MAXSIZE> down = bitDown(bitUp(downMoves, ~cc), 0);
+    bitset<MAXSIZE> left = bitLeft(bitRight(leftMoves, ~cc), 0);
+    bitset<MAXSIZE> right = bitRight(bitLeft(rightMoves, ~cc), 0);
+    bitset<MAXSIZE> up = bitUp(bitDown(upMoves, ~cc), 0);
+    bitset<MAXSIZE> down = bitDown(bitUp(downMoves, ~cc), 0);
     return {up, down, left, right};
 }
 
-bool isIn(const State& state, std::unordered_map<std::bitset<MAXSIZE>, std::bitset<MAXSIZE>>& visited) {
-    std::bitset<MAXSIZE> cc = visited[state.boxPositions];
+// return up, down, left, right possible moves
+tuple<bitset<MAXSIZE>, bitset<MAXSIZE>, bitset<MAXSIZE>
+    , bitset<MAXSIZE>> getPossibleMovesRev(const bitset<MAXSIZE>& boxPositions) {
+    auto leftMoves = bitLeft(bitLeft(bitRight(bitRight(boxPositions, grid | fragPositions | boxPositions | simpleDeadStateMask), 
+        grid | boxPositions), 0), 0);
+    auto rightMoves = bitRight(bitRight(bitLeft(bitLeft(boxPositions, grid | fragPositions | boxPositions | simpleDeadStateMask), 
+        grid | boxPositions), 0), 0);
+    auto upMoves = bitUp(bitUp(bitDown(bitDown(boxPositions, grid | fragPositions | boxPositions | simpleDeadStateMask), 
+        grid | boxPositions), 0), 0);
+    auto downMoves = bitDown(bitDown(bitUp(bitUp(boxPositions, grid | fragPositions | boxPositions | simpleDeadStateMask), 
+        grid | boxPositions), 0), 0);
+    return {upMoves, downMoves, leftMoves, rightMoves};
+}
+// TODO
+bool isDeadFrozenRev(const bitset<MAXSIZE>& boxPositions){
+    if (isFrozenCache.find(boxPositions) != isFrozenCache.end()) {
+        return isFrozenCache[boxPositions];
+    }
+    bitset<MAXSIZE> leftMoves = 0, rightMoves = 0, upMoves = 0, downMoves = 0;
+    bitset<MAXSIZE> anyMove = 0, tmpbox = boxPositions;
+    while (true){
+        leftMoves = bitLeft(bitLeft(bitRight(bitRight(tmpbox, grid | fragPositions | tmpbox | simpleDeadStateMask), 
+            grid | tmpbox), 0), 0);
+        rightMoves = bitRight(bitRight(bitLeft(bitLeft(tmpbox, grid | fragPositions | tmpbox | simpleDeadStateMask), 
+            grid | tmpbox), 0), 0);
+        upMoves = bitUp(bitUp(bitDown(bitDown(tmpbox, grid | fragPositions | tmpbox | simpleDeadStateMask), 
+            grid | tmpbox), 0), 0);
+        downMoves = bitDown(bitDown(bitUp(bitUp(tmpbox, grid | fragPositions | tmpbox | simpleDeadStateMask), 
+            grid | tmpbox), 0), 0);
+        auto newAnyMove = leftMoves | rightMoves | upMoves | downMoves;
+        if (newAnyMove == anyMove) break;
+        anyMove = newAnyMove;
+        tmpbox &= ~anyMove;
+    }
+    auto deadFrozen = (tmpbox & ~goalPositions).any();
+    isFrozenCache[boxPositions] = deadFrozen;
+    return deadFrozen;
+}
+vector<bitset<MAXSIZE>> getRealMovesRev(const bitset<MAXSIZE>& boxPos, 
+    const bitset<MAXSIZE>& cc, tuple<bitset<MAXSIZE>, bitset<MAXSIZE>, bitset<MAXSIZE>, bitset<MAXSIZE>> moves) {
+    auto [upMoves, downMoves, leftMoves, rightMoves] = moves;
+    bitset<MAXSIZE> left = bitLeft(bitLeft(bitRight(bitRight(leftMoves, 0), 
+        ~cc), 0), 0);
+    bitset<MAXSIZE> right = bitRight(bitRight(bitLeft(bitLeft(rightMoves, 0), 
+        ~cc), 0), 0);
+    bitset<MAXSIZE> up = bitUp(bitUp(bitDown(bitDown(upMoves, 0), 
+        ~cc), 0), 0);
+    bitset<MAXSIZE> down = bitDown(bitDown(bitUp(bitUp(downMoves, 0), 
+        ~cc), 0), 0);
+    return {up, down, left, right};
+}
+
+
+bool isIn(const State& state, unordered_map<bitset<MAXSIZE>, 
+    pair<bitset<MAXSIZE>, vector<State*>>> &visited) {
+    bitset<MAXSIZE> cc = visited[state.boxPositions].first;
     return cc[state.agentPos.first * totalc + state.agentPos.second];
 }
 
-void push_in(State* state, std::priority_queue<State*, std::vector<State*>, StateComparator> &pq, 
-    std::unordered_map<std::bitset<MAXSIZE>, std::bitset<MAXSIZE>> &visited) {
-    visited[state->boxPositions] |= state->cc;
-    pq.push(state);
+State* getState(State* state, unordered_map<bitset<MAXSIZE>, 
+    pair<bitset<MAXSIZE>, vector<State*>>> &visited) {
+    auto vec = visited[state->boxPositions].second;
+    for (auto s : vec) {
+        if (s->cc[state->agentPos.first * totalc + state->agentPos.second]) {
+            return s;
+        }
+    }
+    return nullptr;
 }
 
-void printBitset(const std::bitset<MAXSIZE>& bs, const pii& agentPos) {
+void push_in(State* state, vector<State*> &nv, 
+    unordered_map<bitset<MAXSIZE>, pair<bitset<MAXSIZE>, vector<State*>>> &visited) {
+    visited[state->boxPositions].first |= state->cc;
+    visited[state->boxPositions].second.push_back(state);
+    nv.push_back(state);
+}
+
+void printBitset(const bitset<MAXSIZE>& bs, const pii& agentPos) {
     for (int i = 0; i < totalr; ++i) {
         for (int j = 0; j < totalc; ++j) {
             int idx = i * totalc + j;
             if (agentPos.first == i && agentPos.second == j) {
-                std::cout << 'A'; // Agent position
+                cout << 'A'; // Agent position
             }
             else if (tmp[i][j] == '#') {
-                std::cout << '#'; // Wall
+                cout << '#'; // Wall
             }
             else {
-                std::cout << (bs[idx] ? '1' : ' ');
+                cout << (bs[idx] ? '1' : ' ');
             }
         }
-        std::cout << std::endl;
+        cout << endl;
     }
-    std::cout << std::endl;
+    cout << endl;
 }
 
-std::string recoverPath(State* initialState, State* finalState) {
-    std::string result;
-    std::vector<std::pair<pii, int>> steps; // (box position, direction)
-    State* curstate = finalState;
-    // std::cout << "Ending at (" << finalState->agentPos.first << ", " << finalState->agentPos.second << ")" << std::endl;
-    // std::cout << &curstate << " " << curstate->path.first << std::endl;
+string recoverPath(State* initialState, State* midState, State* midState_rev) {
+    string result;
+    vector<pair<pii, int>> steps; // (box position, direction)
+    State* curstate = midState;
     while (curstate != nullptr && curstate->path.first != nullptr) {
-        // std::cout << curstate << " " << curstate->path.first << std::endl;
         steps.push_back({curstate->agentPos, curstate->path.second});
-        // std::cout << "Step " << steps.size() << ": Arriving at ("
-        // << curstate->agentPos.first << ", "
-        // << curstate->agentPos.second << ") by direction "
-        // << dirChar[curstate->path.second] << std::endl;
         curstate = (curstate->path).first;
     }
-    // std::cout << "Starting at (" << initialState->agentPos.first << ", " << initialState->agentPos.second << ")" << std::endl;
-    std::reverse(steps.begin(), steps.end());
+
+    reverse(steps.begin(), steps.end());
     pii currentPos = initialState->agentPos;
     auto currentBoxPos = initialState->boxPositions;
     for (const auto& step : steps) {
         auto [nextPos, dir] = step;
         pii targetPos = {nextPos.first - dirs[dir].first, nextPos.second - dirs[dir].second}; // Position behind the box
-        // std::cout << "Walking from (" << currentPos.first << ", " << currentPos.second << ") to ("
-        //           << targetPos.first << ", " << targetPos.second << ") to push box at ("
-        //           << nextPos.first << ", " << nextPos.second << ") in direction " << dirChar[dir] << std::endl;
-        std::string pathToTarget = agentGoTo(currentPos, targetPos, currentBoxPos);
+        string pathToTarget = agentGoTo(currentPos, targetPos, currentBoxPos);
         if (pathToTarget == "N") {
-            std::cout << "Something went wrong, no path found!" << std::endl;
+            cout << "Something went wrong, no path found!" << endl;
             return "N"; // No valid path found
         }
         result += pathToTarget; // Move agent to the position behind the box
@@ -404,25 +454,34 @@ std::string recoverPath(State* initialState, State* finalState) {
         currentBoxPos.reset(nextPos.first * totalc + nextPos.second);
         currentBoxPos.set((nextPos.first + dirs[dir].first) * totalc + nextPos.second + dirs[dir].second);
     }
+    // cout << result << endl;
+    // cout << "CurPos: (" << currentPos.first << ", " << currentPos.second << ")\n";
+    // cout << "CurPos_rev: (" << midState_rev->agentPos.first << ", " << midState_rev->agentPos.second << ")\n";
+    // cout << result << endl;
+    // result += agentGoTo(currentPos, midState_rev->agentPos, currentBoxPos);
+    curstate = midState_rev;
+    while (curstate != nullptr && curstate->path.first != nullptr) {
+        result += agentGoTo(currentPos, curstate->agentPos, curstate->boxPositions);
+        // cout << result << endl;
+        result += dirChar[(curstate->path.second)]; // Reverse direction
+        currentPos = {curstate->agentPos.first + dirs[curstate->path.second].first, 
+                      curstate->agentPos.second + dirs[curstate->path.second].second};
+        curstate = (curstate->path).first;
+        // cout << "CurPos: (" << currentPos.first << ", " << currentPos.second << ")\n";
+    }
     return result;
 }
 
-void astar(State* initialState) {
-    std::priority_queue<State*, std::vector<State*>, StateComparator> pq;
-    std::unordered_map<std::bitset<MAXSIZE>, std::bitset<MAXSIZE>> visited;
-
-    push_in(initialState, pq, visited);
-
-    while (!pq.empty()) {
-        State* state = pq.top();
-        pq.pop();
-
-        auto [agentPos, cc, boxPositions, path, gCost, hCost, fCost] = *state;
+void bfs(State* initialState, State*endState, vector<State*> &v, vector<State*> &nv, 
+    unordered_map<bitset<MAXSIZE>, pair<bitset<MAXSIZE>, vector<State*>>> &visited,
+    unordered_map<bitset<MAXSIZE>, pair<bitset<MAXSIZE>, vector<State*>>> &visited_another) {
+    for (auto state : v) {
+        auto [agentPos, cc, boxPositions, path] = *state;
         auto movableBoxes = getPossibleMoves(boxPositions);
         auto boxMoves = getRealMoves(boxPositions, cc, movableBoxes);
         
         for (int k=0; k<4; ++k){
-            std::bitset<MAXSIZE> curmove = boxMoves[k];
+            bitset<MAXSIZE> curmove = boxMoves[k];
             size_t idx = curmove._Find_first();
             while (idx < curmove.size()) {
                 int boxIdx = idx;
@@ -441,7 +500,7 @@ void astar(State* initialState) {
                 int newBoxIdx = newRow * totalc + newCol;
 
                 // Update box positions
-                std::bitset<MAXSIZE> newBoxPositions = boxPositions;
+                bitset<MAXSIZE> newBoxPositions = boxPositions;
                 newBoxPositions.reset(boxIdx);
                 newBoxPositions.set(newBoxIdx);
 
@@ -453,10 +512,7 @@ void astar(State* initialState) {
                 }
 
                 // Compute agent position (where agent must be to push box)
-                int agentRow = boxRow - dr;
-                int agentCol = boxCol - dc;
                 pii newAgentPos = mkp(boxRow, boxCol);
-                pii requiredAgentPos = mkp(agentRow, agentCol);
                 
                 // check if in available connected component
                 if (isIn({newAgentPos, 0, newBoxPositions, {}}, visited)) {
@@ -467,42 +523,132 @@ void astar(State* initialState) {
                 // Update connected component for new agent position
                 auto newCC = connectedComponent(newAgentPos, grid | newBoxPositions);
                 
-                // Create new state with incremented g-cost
-                State* newState = new State(newAgentPos, newCC, newBoxPositions, {state, k}, gCost + 1);
+                // Create new state
+                State* newState = new State(newAgentPos, newCC, newBoxPositions, {state, k});
 
                 // Check for solution
-                if ((newBoxPositions & ~goalPositions).none()) {
-                    std::cout << recoverPath(initialState, newState);
-                    std::cout << std::endl;
+                if (isIn(*newState, visited_another)) {
+                    State *foundState = getState(newState, visited_another);
+                    cout << recoverPath(initialState, newState, foundState);
+                    cout << endl;
                     exit(0);
                 }
 
-                push_in(newState, pq, visited);
+                push_in(newState, nv, visited);
                 idx = curmove._Find_next(idx);
             }
         }
-        count++;
+        countRound++;
+    }
+}
+
+void bfs_rev(State* initialState, State*endState, vector<State*> &v, vector<State*> &nv, 
+    unordered_map<bitset<MAXSIZE>, pair<bitset<MAXSIZE>, vector<State*>>> &visited, 
+    unordered_map<bitset<MAXSIZE>, pair<bitset<MAXSIZE>, vector<State*>>> &visited_another) {
+    for (auto state : v) {
+        auto [agentPos, cc, boxPositions, path] = *state;
+        auto movableBoxes = getPossibleMovesRev(boxPositions);
+        auto boxMoves = getRealMovesRev(boxPositions, cc, movableBoxes);
+        
+        for (int k=0; k<4; ++k){
+            bitset<MAXSIZE> curmove = boxMoves[k];
+            size_t idx = curmove._Find_first();
+            while (idx < curmove.size()) {
+                int boxIdx = idx;
+                int boxRow = boxIdx / totalc;
+                int boxCol = boxIdx % totalc;
+
+                // Compute new box position after move
+                int dr = dirs[k].first;
+                int dc = dirs[k].second;
+                int newRow = boxRow - dr;
+                int newCol = boxCol - dc;
+                if (newRow < 0 || newRow >= totalr || newCol < 0 || newCol >= totalc) {
+                    idx = curmove._Find_next(idx);
+                    continue;
+                }
+                int newBoxIdx = newRow * totalc + newCol;
+
+                // Update box positions
+                bitset<MAXSIZE> newBoxPositions = boxPositions;
+                newBoxPositions.reset(boxIdx);
+                newBoxPositions.set(newBoxIdx);
+
+                // Check for deadlock
+                auto deadFrozen = isDeadFrozenRev(newBoxPositions);
+                if (deadFrozen) {
+                    idx = curmove._Find_next(idx);
+                    continue;
+                }
+
+                // Compute agent position (where agent must be to push box)
+                int agentRow = boxRow - 2*dr;
+                int agentCol = boxCol - 2*dc;
+                pii newAgentPos = mkp(agentRow, agentCol);
+                
+                // check if in available connected component
+                if (isIn({newAgentPos, 0, newBoxPositions, {}}, visited)) {
+                    idx = curmove._Find_next(idx);
+                    continue;
+                }
+
+                // Update connected component for new agent position
+                auto newCC = connectedComponent(newAgentPos, grid | newBoxPositions);
+                
+                // Create new state
+                State* newState = new State(newAgentPos, newCC, newBoxPositions, {state, k});
+
+                // Check for solution
+                if (isIn(*newState, visited_another)) {
+                    State *foundState = getState(newState, visited_another);
+                    cout << recoverPath(initialState, foundState, newState);
+                    cout << endl;
+                    exit(0);
+                }
+
+                push_in(newState, nv, visited);
+                idx = curmove._Find_next(idx);
+            }
+        }
+        countRound_rev++;
     }
 }
 
 int main(int argc, char* argv[]) {
     // 檢查命令列參數
     if (argc != 2) {
-        std::cerr << "使用方式: " << argv[0] << " <檔案路徑>" << std::endl;
-        std::cerr << "範例: ./worker 01.txt" << std::endl;
+        cerr << "使用方式: " << argv[0] << " <檔案路徑>" << endl;
+        cerr << "範例: ./worker 01.txt" << endl;
         return 1;
     }
     // read file
-    std::string filename = argv[1];
+    string filename = argv[1];
     auto [boxPositions, agentPos] = readFileToVector(filename);
-    // std::cout << "totalr: " << totalr << ", totalc: " << totalc << std::endl;
-    // std::cout << "==========================" << std::endl;
+    // cout << "totalr: " << totalr << ", totalc: " << totalc << endl;
+    // cout << "==========================" << endl;
     auto cc = connectedComponent(agentPos, grid | boxPositions);
     simpleDeadlockList();
     precalculateMinDistances();
 
     State* initialState = new State(agentPos, cc, boxPositions, {nullptr, 0});
-    astar(initialState);
+    State* endState = new State({-1, -1}, ~(0), goalPositions, {nullptr, 0});
+    vector<State*> v, nv;
+    unordered_map<bitset<MAXSIZE>, pair<bitset<MAXSIZE>, vector<State*>>> visited;
+    vector<State*> v_rev, nv_rev;
+    unordered_map<bitset<MAXSIZE>, pair<bitset<MAXSIZE>, vector<State*>>> visited_rev;
+
+    push_in(initialState, v, visited);
+    push_in(endState, v_rev, visited_rev);
+
+    while (!v.empty()){
+        cout << "Forward frontier size: " << v.size() << ", visited states: " << visited.size() << ", total expanded: " << countRound << endl;
+        bfs(initialState, endState, v, nv, visited, visited_rev);
+        v = nv;
+        nv.clear();
+        // bfs_rev(initialState, endState, v_rev, nv_rev, visited_rev, visited);
+        // v_rev = nv_rev;
+        // nv_rev.clear();
+    }
 
     return 0;
 }
