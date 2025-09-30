@@ -1,24 +1,10 @@
 #include <bits/stdc++.h>
 #include <fstream>
 #include <boost/functional/hash.hpp>
-#include <signal.h>
-#include <unistd.h>
 #define MAXSIZE 256
-using namespace std;
-
-void alarm_handler(int signum) {
-    cerr << "Time limit exceeded." << endl;
-    exit(1);
-}
-
-struct AlarmSetter {
-    AlarmSetter() {
-        signal(SIGALRM, alarm_handler);
-        alarm(180);
-    }
-} alarmSetterInstance;
 #define mkp make_pair
 #define pii pair<int, int>
+using namespace std;
 
 /*
 o: The player stepping on a regular tile.
@@ -43,60 +29,6 @@ int totalr, totalc;
 bitset<MAXSIZE> grid = 0, goalPositions = 0, fragPositions = 0;
 bitset<MAXSIZE> simpleDeadStateMask = 0;
 unordered_map<bitset<MAXSIZE>, bool> isFrozenCache;
-
-// Precalculated minimum Manhattan distances to nearest goal
-vector<vector<int>> minDistToGoal;
-
-void precalculateMinDistances() {
-    minDistToGoal.assign(totalr, vector<int>(totalc, INT_MAX));
-    
-    // Use BFS from all goal positions
-    queue<pair<int, int>> q;
-    vector<vector<bool>> visited(totalr, vector<bool>(totalc, false));
-    
-    // Start from all goal positions
-    for (int i = 0; i < totalr; ++i) {
-        for (int j = 0; j < totalc; ++j) {
-            int idx = i * totalc + j;
-            if (goalPositions[idx]) {
-                q.push({i, j});
-                minDistToGoal[i][j] = 0;
-                visited[i][j] = true;
-            }
-        }
-    }
-    
-    // BFS to calculate minimum distances
-    while (!q.empty()) {
-        auto [r, c] = q.front();
-        q.pop();
-        
-        for (const auto& dir : dirs) {
-            int nr = r + dir.first;
-            int nc = c + dir.second;
-            
-            if (nr < 0 || nr >= totalr || nc < 0 || nc >= totalc) continue;
-            if (tmp[nr][nc] == '#') continue; // wall
-            if (visited[nr][nc]) continue;
-            
-            visited[nr][nc] = true;
-            minDistToGoal[nr][nc] = minDistToGoal[r][c] + 1;
-            q.push({nr, nc});
-        }
-    }
-}
-
-int calculateHeuristic(const bitset<MAXSIZE>& boxPositions) {
-    int totalDist = 0;
-    size_t idx = boxPositions._Find_first();
-    while (idx < boxPositions.size()) {
-        int boxRow = idx / totalc;
-        int boxCol = idx % totalc;
-        totalDist += minDistToGoal[boxRow][boxCol];
-        idx = boxPositions._Find_next(idx);
-    }
-    return totalDist;
-}
 
 struct State {
     pii agentPos; // (row, col)
@@ -134,6 +66,25 @@ bitset<MAXSIZE> bitUp(bitset<MAXSIZE> mp, bitset<MAXSIZE> mask){
 }
 bitset<MAXSIZE> bitDown(bitset<MAXSIZE> mp, bitset<MAXSIZE> mask){
     return (mp << totalc) & ~(mask);
+}
+
+void printBitset(bitset<MAXSIZE>& bs, const pii& agentPos) {
+    for (int i = 0; i < totalr; ++i) {
+        for (int j = 0; j < totalc; ++j) {
+            int idx = i * totalc + j;
+            if (agentPos.first == i && agentPos.second == j) {
+                cout << 'A'; // Agent position
+            }
+            else if (tmp[i][j] == '#') {
+                cout << '#'; // Wall
+            }
+            else {
+                cout << (bs[idx] ? '1' : ' ');
+            }
+        }
+        cout << endl;
+    }
+    cout << endl;
 }
 
 // boxPositions, agentPos
@@ -342,8 +293,10 @@ tuple<bitset<MAXSIZE>, bitset<MAXSIZE>, bitset<MAXSIZE>
         grid | boxPositions), 0), 0);
     auto downMoves = bitDown(bitDown(bitUp(bitUp(boxPositions, grid | fragPositions | boxPositions | simpleDeadStateMask), 
         grid | boxPositions), 0), 0);
+    
     return {upMoves, downMoves, leftMoves, rightMoves};
 }
+
 // TODO
 bool isDeadFrozenRev(const bitset<MAXSIZE>& boxPositions){
     if (isFrozenCache.find(boxPositions) != isFrozenCache.end()) {
@@ -406,25 +359,6 @@ void push_in(State* state, vector<State*> &nv,
     visited[state->boxPositions].first |= state->cc;
     visited[state->boxPositions].second.push_back(state);
     nv.push_back(state);
-}
-
-void printBitset(const bitset<MAXSIZE>& bs, const pii& agentPos) {
-    for (int i = 0; i < totalr; ++i) {
-        for (int j = 0; j < totalc; ++j) {
-            int idx = i * totalc + j;
-            if (agentPos.first == i && agentPos.second == j) {
-                cout << 'A'; // Agent position
-            }
-            else if (tmp[i][j] == '#') {
-                cout << '#'; // Wall
-            }
-            else {
-                cout << (bs[idx] ? '1' : ' ');
-            }
-        }
-        cout << endl;
-    }
-    cout << endl;
 }
 
 string recoverPath(State* initialState, State* midState, State* midState_rev) {
@@ -520,7 +454,7 @@ void bfs(State* initialState, State*endState, vector<State*> &v, vector<State*> 
                 
                 // Create new state
                 State* newState = new State(newAgentPos, newCC, newBoxPositions, {state, k});
-
+                
                 // Check for solution
                 if (isIn(*newState, visited_another)) {
                     State *foundState = getState(newState, visited_another);
@@ -623,10 +557,9 @@ int main(int argc, char* argv[]) {
     // cout << "==========================" << endl;
     auto cc = connectedComponent(agentPos, grid | boxPositions);
     simpleDeadlockList();
-    precalculateMinDistances();
 
     State* initialState = new State(agentPos, cc, boxPositions, {nullptr, 0});
-    State* endState = new State({-1, -1}, ~(0), goalPositions, {nullptr, 0});
+    State* endState = new State({-1, -1}, ~(bitset<MAXSIZE>)0, goalPositions, {nullptr, 0});
     vector<State*> v, nv;
     unordered_map<bitset<MAXSIZE>, pair<bitset<MAXSIZE>, vector<State*>>> visited;
     vector<State*> v_rev, nv_rev;
@@ -634,18 +567,22 @@ int main(int argc, char* argv[]) {
 
     push_in(initialState, v, visited);
     push_in(endState, v_rev, visited_rev);
+    #ifdef DEBUG
+        printBitset(simpleDeadStateMask, {-1, -1});
+    #endif
 
     while (!v.empty()){
         #ifdef DEBUG
-        cout << "Forward frontier size: " << v.size() << ", Reverse frontier size: " << v_rev.size()
+        cout << "Round " << moveRound << ", Forward frontier size: " << v.size() << ", Reverse frontier size: " << v_rev.size()
              << ", Forward count: "<< countRound << ", Reverse count: " << countRound_rev << endl;
         #endif
         bfs(initialState, endState, v, nv, visited, visited_rev);
         v = nv;
         nv.clear();
-        // bfs_rev(initialState, endState, v_rev, nv_rev, visited_rev, visited);
-        // v_rev = nv_rev;
-        // nv_rev.clear();
+        bfs_rev(initialState, endState, v_rev, nv_rev, visited_rev, visited);
+        v_rev = nv_rev;
+        nv_rev.clear();
+        moveRound++;
     }
     cout << "No solution found." << endl;
 
