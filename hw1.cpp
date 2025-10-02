@@ -297,7 +297,6 @@ tuple<bitset<MAXSIZE>, bitset<MAXSIZE>, bitset<MAXSIZE>
     return {upMoves, downMoves, leftMoves, rightMoves};
 }
 
-// TODO
 bool isDeadFrozenRev(const bitset<MAXSIZE>& boxPositions){
     if (isFrozenCache.find(boxPositions) != isFrozenCache.end()) {
         return isFrozenCache[boxPositions];
@@ -339,12 +338,15 @@ vector<bitset<MAXSIZE>> getRealMovesRev(const bitset<MAXSIZE>& boxPos,
 
 bool isIn(const State& state, unordered_map<bitset<MAXSIZE>, 
     pair<bitset<MAXSIZE>, vector<State*>>> &visited) {
-    bitset<MAXSIZE> cc = visited[state.boxPositions].first;
+    auto found = visited.find(state.boxPositions);
+    if (found == visited.end()) return false;
+    bitset<MAXSIZE> cc = found->second.first;
     return cc[state.agentPos.first * totalc + state.agentPos.second];
 }
 
 State* getState(State* state, unordered_map<bitset<MAXSIZE>, 
     pair<bitset<MAXSIZE>, vector<State*>>> &visited) {
+    auto found = visited.find(state->boxPositions);
     auto vec = visited[state->boxPositions].second;
     for (auto s : vec) {
         if (s->cc[state->agentPos.first * totalc + state->agentPos.second]) {
