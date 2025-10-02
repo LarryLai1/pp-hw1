@@ -417,7 +417,7 @@ void bfs(State* initialState, State*endState, vector<State*> &v, vector<State*> 
             bitset<MAXSIZE> curmove = boxMoves[k];
             size_t idx = curmove._Find_first();
             while (idx < curmove.size()) {
-                // if (foundSolution) exit(0);
+                if (foundSolution) exit(0);
                 int boxIdx = idx;
                 int boxRow = boxIdx / totalc;
                 int boxCol = boxIdx % totalc;
@@ -495,7 +495,7 @@ void bfs_rev(State* initialState, State*endState, vector<State*> &v, vector<Stat
             bitset<MAXSIZE> curmove = boxMoves[k];
             size_t idx = curmove._Find_first();
             while (idx < curmove.size()) {
-                // if (foundSolution) exit(0);
+                if (foundSolution) exit(0);
                 int boxIdx = idx;
                 int boxRow = boxIdx / totalc;
                 int boxCol = boxIdx % totalc;
@@ -610,7 +610,6 @@ int main(int argc, char* argv[]) {
             }
         }
         moveRound++;
-        if (foundSolution) break;
     }
     cout << "No solution found." << endl;
 
