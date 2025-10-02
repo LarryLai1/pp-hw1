@@ -1,6 +1,8 @@
 #include <bits/stdc++.h>
 #include <fstream>
 #include <boost/functional/hash.hpp>
+#include <omp.h>
+#include "tbb/concurrent_unordered_map.h"
 #define MAXSIZE 256
 #define mkp make_pair
 #define pii pair<int, int>
@@ -26,9 +28,11 @@ vector<string> tmp;
 int countRound = 0, countRound_rev = 0;
 int moveRound = 0;
 int totalr, totalc;
+bool foundSolution = false;
 bitset<MAXSIZE> grid = 0, goalPositions = 0, fragPositions = 0;
 bitset<MAXSIZE> simpleDeadStateMask = 0;
-unordered_map<bitset<MAXSIZE>, bool> isFrozenCache;
+tbb::concurrent_unordered_map<bitset<MAXSIZE>, bool> isFrozenCache;
+shared_mutex mtx;
 
 struct State {
     pii agentPos; // (row, col)
@@ -266,7 +270,7 @@ bool isDeadFrozen(const bitset<MAXSIZE>& boxPositions){
         tmpbox &= ~anyMove;
     }
     auto deadFrozen = (tmpbox & ~goalPositions).any();
-    isFrozenCache[boxPositions] = deadFrozen;
+    isFrozenCache.insert({boxPositions, deadFrozen});
     return deadFrozen;
 }
 
@@ -318,7 +322,7 @@ bool isDeadFrozenRev(const bitset<MAXSIZE>& boxPositions){
         tmpbox &= ~anyMove;
     }
     auto deadFrozen = (tmpbox & ~goalPositions).any();
-    isFrozenCache[boxPositions] = deadFrozen;
+    isFrozenCache.insert({boxPositions, deadFrozen});
     return deadFrozen;
 }
 vector<bitset<MAXSIZE>> getRealMovesRev(const bitset<MAXSIZE>& boxPos, 
@@ -335,8 +339,7 @@ vector<bitset<MAXSIZE>> getRealMovesRev(const bitset<MAXSIZE>& boxPos,
     return {up, down, left, right};
 }
 
-
-bool isIn(const State& state, unordered_map<bitset<MAXSIZE>, 
+bool isIn(const State& state, tbb::concurrent_unordered_map<bitset<MAXSIZE>, 
     pair<bitset<MAXSIZE>, vector<State*>>> &visited) {
     auto found = visited.find(state.boxPositions);
     if (found == visited.end()) return false;
@@ -344,10 +347,10 @@ bool isIn(const State& state, unordered_map<bitset<MAXSIZE>,
     return cc[state.agentPos.first * totalc + state.agentPos.second];
 }
 
-State* getState(State* state, unordered_map<bitset<MAXSIZE>, 
+State* getState(State* state, tbb::concurrent_unordered_map<bitset<MAXSIZE>, 
     pair<bitset<MAXSIZE>, vector<State*>>> &visited) {
-    auto found = visited.find(state->boxPositions);
-    auto vec = visited[state->boxPositions].second;
+    auto found = visited.find(state->boxPositions)->second;
+    auto vec = found.second;
     for (auto s : vec) {
         if (s->cc[state->agentPos.first * totalc + state->agentPos.second]) {
             return s;
@@ -357,7 +360,7 @@ State* getState(State* state, unordered_map<bitset<MAXSIZE>,
 }
 
 void push_in(State* state, vector<State*> &nv, 
-    unordered_map<bitset<MAXSIZE>, pair<bitset<MAXSIZE>, vector<State*>>> &visited) {
+    tbb::concurrent_unordered_map<bitset<MAXSIZE>, pair<bitset<MAXSIZE>, vector<State*>>> &visited) {
     visited[state->boxPositions].first |= state->cc;
     visited[state->boxPositions].second.push_back(state);
     nv.push_back(state);
@@ -393,7 +396,6 @@ string recoverPath(State* initialState, State* midState, State* midState_rev) {
     curstate = midState_rev;
     while (curstate != nullptr && curstate->path.first != nullptr) {
         result += agentGoTo(currentPos, curstate->agentPos, curstate->boxPositions);
-        // cout << result << endl;
         result += dirChar[(curstate->path.second)]; // Reverse direction
         currentPos = {curstate->agentPos.first + dirs[curstate->path.second].first, 
                       curstate->agentPos.second + dirs[curstate->path.second].second};
@@ -404,8 +406,8 @@ string recoverPath(State* initialState, State* midState, State* midState_rev) {
 }
 
 void bfs(State* initialState, State*endState, vector<State*> &v, vector<State*> &nv, 
-    unordered_map<bitset<MAXSIZE>, pair<bitset<MAXSIZE>, vector<State*>>> &visited,
-    unordered_map<bitset<MAXSIZE>, pair<bitset<MAXSIZE>, vector<State*>>> &visited_another) {
+    tbb::concurrent_unordered_map<bitset<MAXSIZE>, pair<bitset<MAXSIZE>, vector<State*>>> &visited,
+    tbb::concurrent_unordered_map<bitset<MAXSIZE>, pair<bitset<MAXSIZE>, vector<State*>>> &visited_another) {
     for (auto state : v) {
         auto [agentPos, cc, boxPositions, path] = *state;
         auto movableBoxes = getPossibleMoves(boxPositions);
@@ -415,6 +417,7 @@ void bfs(State* initialState, State*endState, vector<State*> &v, vector<State*> 
             bitset<MAXSIZE> curmove = boxMoves[k];
             size_t idx = curmove._Find_first();
             while (idx < curmove.size()) {
+                // if (foundSolution) exit(0);
                 int boxIdx = idx;
                 int boxRow = boxIdx / totalc;
                 int boxCol = boxIdx % totalc;
@@ -459,10 +462,17 @@ void bfs(State* initialState, State*endState, vector<State*> &v, vector<State*> 
                 
                 // Check for solution
                 if (isIn(*newState, visited_another)) {
-                    State *foundState = getState(newState, visited_another);
-                    cout << recoverPath(initialState, newState, foundState);
-                    cout << endl;
-                    exit(0);
+                    #pragma omp critical
+                    {
+                        if (foundSolution) {
+                            exit(0);
+                        }
+                        State *foundState = getState(newState, visited_another);
+                        cout << recoverPath(initialState, newState, foundState);
+                        cout << endl;
+                        foundSolution = true;
+                        exit(0);
+                    }
                 }
 
                 push_in(newState, nv, visited);
@@ -474,8 +484,8 @@ void bfs(State* initialState, State*endState, vector<State*> &v, vector<State*> 
 }
 
 void bfs_rev(State* initialState, State*endState, vector<State*> &v, vector<State*> &nv, 
-    unordered_map<bitset<MAXSIZE>, pair<bitset<MAXSIZE>, vector<State*>>> &visited, 
-    unordered_map<bitset<MAXSIZE>, pair<bitset<MAXSIZE>, vector<State*>>> &visited_another) {
+    tbb::concurrent_unordered_map<bitset<MAXSIZE>, pair<bitset<MAXSIZE>, vector<State*>>> &visited, 
+    tbb::concurrent_unordered_map<bitset<MAXSIZE>, pair<bitset<MAXSIZE>, vector<State*>>> &visited_another) {
     for (auto state : v) {
         auto [agentPos, cc, boxPositions, path] = *state;
         auto movableBoxes = getPossibleMovesRev(boxPositions);
@@ -485,6 +495,7 @@ void bfs_rev(State* initialState, State*endState, vector<State*> &v, vector<Stat
             bitset<MAXSIZE> curmove = boxMoves[k];
             size_t idx = curmove._Find_first();
             while (idx < curmove.size()) {
+                // if (foundSolution) exit(0);
                 int boxIdx = idx;
                 int boxRow = boxIdx / totalc;
                 int boxCol = boxIdx % totalc;
@@ -531,10 +542,17 @@ void bfs_rev(State* initialState, State*endState, vector<State*> &v, vector<Stat
 
                 // Check for solution
                 if (isIn(*newState, visited_another)) {
-                    State *foundState = getState(newState, visited_another);
-                    cout << recoverPath(initialState, foundState, newState);
-                    cout << endl;
-                    exit(0);
+                    #pragma omp critical
+                    {
+                        if (foundSolution) {
+                            exit(0);
+                        }
+                        State *foundState = getState(newState, visited_another);
+                        cout << recoverPath(initialState, foundState, newState);
+                        cout << endl;
+                        foundSolution = true;
+                        exit(0);
+                    }
                 }
 
                 push_in(newState, nv, visited);
@@ -563,9 +581,9 @@ int main(int argc, char* argv[]) {
     State* initialState = new State(agentPos, cc, boxPositions, {nullptr, 0});
     State* endState = new State({-1, -1}, ~(bitset<MAXSIZE>)0, goalPositions, {nullptr, 0});
     vector<State*> v, nv;
-    unordered_map<bitset<MAXSIZE>, pair<bitset<MAXSIZE>, vector<State*>>> visited;
+    tbb::concurrent_unordered_map<bitset<MAXSIZE>, pair<bitset<MAXSIZE>, vector<State*>>> visited;
     vector<State*> v_rev, nv_rev;
-    unordered_map<bitset<MAXSIZE>, pair<bitset<MAXSIZE>, vector<State*>>> visited_rev;
+    tbb::concurrent_unordered_map<bitset<MAXSIZE>, pair<bitset<MAXSIZE>, vector<State*>>> visited_rev;
 
     push_in(initialState, v, visited);
     push_in(endState, v_rev, visited_rev);
@@ -578,13 +596,21 @@ int main(int argc, char* argv[]) {
         cout << "Round " << moveRound << ", Forward frontier size: " << v.size() << ", Reverse frontier size: " << v_rev.size()
              << ", Forward count: "<< countRound << ", Reverse count: " << countRound_rev << endl;
         #endif
-        bfs(initialState, endState, v, nv, visited, visited_rev);
-        v = nv;
-        nv.clear();
-        bfs_rev(initialState, endState, v_rev, nv_rev, visited_rev, visited);
-        v_rev = nv_rev;
-        nv_rev.clear();
+        #pragma omp parallel num_threads(2)
+        {
+            if (omp_get_thread_num() == 0){
+                bfs(initialState, endState, v, nv, visited, visited_rev);
+                v = nv;
+                nv.clear();
+            }
+            else{
+                bfs_rev(initialState, endState, v_rev, nv_rev, visited_rev, visited);
+                v_rev = nv_rev;
+                nv_rev.clear();
+            }
+        }
         moveRound++;
+        if (foundSolution) break;
     }
     cout << "No solution found." << endl;
 
